@@ -1,0 +1,1098 @@
+-- THE CLAN LOOP (tickets.md 15 + "the clan loop", operator 2026-10-28): the clan's day in thirds - morning, noon,
+-- evening - each one the same loop:
+--   the third begins (its story beats: days.ini <Third>Start) -> the DEPUTY assigns a task -> you do it, exploring as
+--   long as you like (a done task never sends you home) -> you TURN IT IN at its end point ([Task.<Kind>] TurnIn: a
+--   hunt at the fresh-kill pile, a patrol by reporting to the deputy, a spar is its own end) -> the clan's event of that third, if any
+--   (clan meetings, ceremonies ...; the evening: eating together, sharing tongues - clanevents.ini, and the story's
+--   beats: days.ini <Third>) -> the time moves on a full third -> the next assignment.
+-- After the evening: the night - sleep (the rest key) or the night watch (go to the guard spot at the camp entrance:
+-- a short cutscene shows the night passing), or what the story sets (days.ini NightDuty = Hunt: a night hunt).
+-- The clan's day drives the clock (DayNight.Drive): the sky shows each third at its [Thirds] hour - no wall clock.
+-- Tasks: Hunt (N prey - every prey caught feeds the clan's pile, hunt on as long as you like), Patrol (N border points
+-- out in the territory, clanmates walk it with you), Train (a sparring fight with the clan's move teacher - the
+-- game's own fight), Free (nothing - the time is yours). At the day's end the tasks done raise your standing in the
+-- clan, the missed ones lower it (kept with the save). Below MaxRank only.
+-- HOOK POINTS (for story / other mods - all optional):
+--   configs  duties.ini [Third.<Third>] Start / Event steps, [Assign.<Task>] steps (the deputy's words), [NightWatch]
+--            steps; clanevents.ini [Event.<Name>] (When / Chance / Days / Once / steps); days.ini per story day
+--            <Third>Start, <Third> (beats), <Third>Duty, NightDuty. Steps = events.lua's scene steps (Card / Dialogue /
+--            Fade / Bond / Emit / Hook ...).
+--   blocking Lua hooks (events.lua Events.Hook(name, fn(ctx, continue))): the loop runs ClanThirdStart, ClanAssign,
+--            ClanThirdEnd (after the turn-in and the third's events), ClanNight (the watch's cutscene) at those points - a mod's own cutscene / scene goes there.
+--   events   WaCa.On: ClanThird(day, third), TaskAssigned(day, third, task), TaskDone(day, third, task),
+--            TaskTurnedIn(day, third, task, how), ClanThirdEnded(day, third), CampEntered / CampLeft(day, third),
+--            ClanNight(day, kind), DutiesJudged(day, done, missed, standing).
+--   Lua      Duties.Now() -> { day, third, stage, task }, Duties.Plan(hunt, patrol, kinds), Duties.Standing().
+-- config/duties.ini, config/clanevents.ini.
+local Duties = {}
+
+local WaCa, log, DayNight, Events, Days
+local THIRDS = { "Morning", "Noon", "Evening" }
+local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true }
+local COUNTED = { Hunt = true, Patrol = true, Train = true, NightWatch = true }
+local cfg = { on = false, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow = 50, patrolPoints = 2, pilePerPrey = 4,
+              companions = 2, companionRadius = 3000,
+              train = true, trainMaxRank = "Apprentice", trainBond = 2,
+              trainTag = "Gameplay.Combat.Generator.Fixed.TrainingGrounds",
+              huntingGround = true,
+              reach = 800, minDist = 3000, maxDist = 12000, standingDone = 2, standingMissed = -1, seconds = 7,
+              hours = { Morning = 8, Noon = 13, Evening = 19, Night = 23 },
+              weights = { Morning = { Hunt = 2, Patrol = 2, Train = 1 }, Noon = { Hunt = 1, Patrol = 1, Train = 2 },
+                          Evening = { Patrol = 2, Hunt = 1, Free = 1 }, Night = { Sleep = 3, NightWatch = 1 } },
+              turnIn = { Hunt = "Pile", Patrol = "Deputy", Free = "Deputy", Train = "Partner" },
+              pileFactor = 3, campRadius = 3500, campMax = 6000, watchStanding = 1, stepEvery = 1,
+              thirdScenes = {}, assignScenes = {}, watchScene = {}, clanEvents = {} }
+local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
+local HINT = "/Game/Gameplay/Blueprints/WorldElements/POIHintArea/BP_POI_HintArea_Quest.BP_POI_HintArea_Quest_C"
+local plan                        -- day scripts' override: { hunt = n, patrol = n, kinds = { Morning = "Hunt", ... } }
+local today                       -- { day, third = 1..3 / 4 = night, stage, task, record = { { third, kind, done } } }
+local standing = 0
+local restoredFor
+local ready = false
+local eventsDone = {}             -- clan events with Once = 1 already held in this save
+local pendingBlackout             -- the night watch faded out: the morning fades back in
+
+local function pc()
+    for _, c in ipairs(FindAllOf("SwtPlayerController") or {}) do
+        if c:IsValid() and c.Player then return c end
+    end
+end
+
+local function card(text)
+    pcall(function()
+        local controller = pc()
+        local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, WaCa.LoadAsset(CARD), controller)
+        w:AddToViewport(60)
+        w.mcGuiTextInfo:SetText(FText(text))
+        local name = (w:GetFullName():gsub("^%S+ ", ""))
+        ExecuteInGameThreadWithDelay(math.floor(cfg.seconds * 1000), function()
+            local o = StaticFindObject(name)
+            if o and o:IsValid() then o:RemoveFromParent() end
+        end)
+    end)
+end
+
+local function ranks()
+    local out = {}
+    pcall(function()
+        StaticFindObject("/Script/SwtQuest.ECharacterRank"):ForEachName(function(n, v) out[n:ToString():gsub("^.*::", "")] = v end)
+    end)
+    local p = WaCa.GameProgress()
+    return out, p and tonumber(p.Rank)
+end
+
+local function rankAllows()
+    local r, rank = ranks()
+    return not (rank and r[cfg.maxRank] and rank >= r[cfg.maxRank])
+end
+
+-- --- training: a sparring fight ---
+
+local roleNames
+local function roleName(v)
+    if not roleNames then
+        roleNames = {}
+        pcall(function()
+            StaticFindObject("/Script/SwtQuest.ENarrativeRole"):ForEachName(function(n, x) roleNames[x] = n:ToString():gsub("^.*::", "") end)
+        end)
+    end
+    return roleNames[v]
+end
+
+-- the sparring partner: the clan's move teacher (a story cat), else the nearest clanmate - its object path, its story
+-- role (for the bond; nil for a plain clanmate) and a name for the cards
+local function trainingPartner()
+    local p = pc() and pc().Pawn
+    if not p then return nil end
+    for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
+        local found
+        pcall(function()
+            local name = a:IsValid() and not a.bHidden and a.narrativeRole and roleName(a.narrativeRole)
+            if name and name:find("WarriorMoveLearn$") then
+                found = { path = (a:GetFullName():gsub("^%S+ ", "")), role = a.narrativeRole, who = "the clan's move teacher" }
+            end
+        end)
+        if found then return found end
+    end
+    local at = p:K2_GetActorLocation()
+    local best, bd
+    for _, c in ipairs(FindAllOf("BP_Exploration_Character_Base_C") or {}) do
+        pcall(function()
+            if c:IsValid() and c.CharacterType == 1 and c:GetAddress() ~= p:GetAddress() then
+                local q = c:K2_GetActorLocation()
+                local d = (q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2
+                if not bd or d < bd then best, bd = c, d end
+            end
+        end)
+    end
+    return best and { path = (best:GetFullName():gsub("^%S+ ", "")), who = "a clanmate" } or nil
+end
+
+-- the fight, the game's own way: its combat boxes start one when the player's character overlaps them - the handler
+-- (SwtAdventureCombatBoxComponent::OnBeginOverlap, exe 0x1417E1370) checks the actor is player-controlled, the
+-- component is its capsule and the box's OWNER is not that actor (an owner that is a character is the opponent), then
+-- starts combat (0x141803400) with the box's CombatType + CombatTag. So: a box made inside the partner, TrainingGrounds
+-- (5) + the TrainingGrounds encounter, its overlap called for the player. VM 2026-10-28: the turn-based fight opens.
+local function startSpar(partner)
+    local p = pc() and pc().Pawn
+    local owner = StaticFindObject(partner.path)
+    if not (p and owner and owner:IsValid()) then return false end
+    local ok, err = pcall(function()
+        local box = StaticConstructObject(StaticFindObject("/Script/SwtAdventure.SwtAdventureCombatBoxComponent"), owner,
+            FName("WaCaSparBox"))
+        box.CombatType = 5
+        box.CombatTag = { TagName = FName(cfg.trainTag) }
+        box:OnBeginOverlap(box, p, p.CapsuleComponent, 0, false, {})
+    end)
+    if not ok then log("duties: the sparring fight didn't start: %s", tostring(err)) end
+    return ok
+end
+
+-- spots for the patrol: random points in the areas of the generators 20-90 m away (where the clan's prey and
+-- threats are - the border of what your cat knows), each marked with the game's quest hint (sense-mode trail)
+local function patrolPoints(n)
+    local p = pc() and pc().Pawn
+    if not p then return {} end
+    local at = p:K2_GetActorLocation()
+    local candidates = {}
+    for _, g in ipairs(FindAllOf("BP_Enemy_Generator_C") or {}) do
+        pcall(function()
+            local q = g:K2_GetActorLocation()
+            local d = math.sqrt((q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2)
+            if d >= cfg.minDist and d <= cfg.maxDist then table.insert(candidates, g) end
+        end)
+    end
+    local out = {}
+    local class = WaCa.LoadAsset(HINT)
+    for _ = 1, math.min(n, #candidates) do
+        local g = table.remove(candidates, math.random(#candidates))
+        local ok = pcall(function()
+            local area = g.AreaComponent
+            local c, e = area:K2_GetComponentLocation(), area:GetScaledBoxExtent()
+            local point = { X = c.X + (math.random() * 2 - 1) * e.X * 0.5, Y = c.Y + (math.random() * 2 - 1) * e.Y * 0.5, Z = c.Z }
+            local marker = class and p:GetWorld():SpawnActor(class, point, { pitch = 0, Yaw = 0, Roll = 0 })
+            if marker and marker:IsValid() then
+                pcall(function() marker.SenseTrackedComponent.bTrackingEnabled = true end)
+                pcall(function() marker:OnQuestTracked(true, nil) end)
+                point.marker = (marker:GetFullName():gsub("^%S+ ", ""))
+            end
+            table.insert(out, point)
+        end)
+        if not ok then log("duties: a patrol point couldn't be placed") end
+    end
+    return out
+end
+
+-- the hunting ground for the day's hunt (tickets.md 8, hunting missions): a prey creature about 20-90 m away, its
+-- spot marked like the patrol points - the clan sends you where the prey is this season (preyworld.lua hides the
+-- rest), the sense trail shows the way
+local function huntingGround()
+    local p = pc() and pc().Pawn
+    if not p then return nil end
+    local at = p:K2_GetActorLocation()
+    local kinds = {}
+    pcall(function()
+        StaticFindObject("/Script/SwtQuest.ESwtQuestCharacterType"):ForEachName(function(n, v)
+            kinds[v] = (n:ToString():gsub("^.*::", ""):gsub("^Weak", ""))
+        end)
+    end)
+    local prey = { Mice = true, Squirrel = true, Rabbit = true, Bird = true }
+    local found = {}
+    for _, c in ipairs(FindAllOf("BP_Exploration_Character_Base_C") or {}) do
+        pcall(function()
+            if c:IsValid() and not c.bHidden and prey[kinds[c.CharacterType] or ""] then
+                local q = c:K2_GetActorLocation()
+                local d = math.sqrt((q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2)
+                if d >= cfg.minDist and d <= cfg.maxDist then table.insert(found, { q, kinds[c.CharacterType] }) end
+            end
+        end)
+    end
+    if #found == 0 then return nil end
+    local pick = found[math.random(#found)]
+    local point = { X = pick[1].X, Y = pick[1].Y, Z = pick[1].Z, kind = pick[2] }
+    pcall(function()
+        local marker = p:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 })
+        pcall(function() marker.SenseTrackedComponent.bTrackingEnabled = true end)
+        pcall(function() marker:OnQuestTracked(true, nil) end)
+        point.marker = (marker:GetFullName():gsub("^%S+ ", ""))
+    end)
+    return point
+end
+
+-- the clan's fresh-kill pile (its resource component, on the game state) - a finished hunt adds to it the game's way
+local function pileComponent()
+    for _, comp in ipairs(FindAllOf("SwtAdventureFreshKillPileComponent") or {}) do
+        if comp:IsValid() then return comp end
+    end
+end
+
+-- clanmates on the patrol (tickets.md 7): the nearest clan cats walk with you (follow.lua - they hold back while you
+-- sneak) until the patrol is done or the day ends
+local function companionsJoin(n)
+    if n <= 0 then return nil end
+    local Follow = require("follow")
+    local cats = Follow.Nearest(n, cfg.companionRadius)
+    if #cats == 0 then return nil end
+    log("duties: %d clanmate(s) join your patrol", #cats)
+    return Follow.Group(cats, pc().Pawn, { distance = 250, spread = 150 })
+end
+
+local function companionsLeave(group)
+    if group then require("follow").Release(group) end
+end
+
+local function removeMarker(point)
+    local m = point.marker and StaticFindObject(point.marker)
+    if m and m:IsValid() then pcall(function() m:K2_DestroyActor() end) end
+    point.marker = nil
+end
+
+-- --- places: the camp, patrol points, the guard spot - trigger boxes reported by the native area hook ---
+
+-- the game's own movement-modifier box Blueprint (its overlap is bound there - fishing.lua's pattern), flag cleared:
+-- AreaOverlap(nil, area, actor, "1" / "0", flag) when the player's cat walks in / out (areas.cpp)
+local areaClass
+local areas = {}                  -- area path -> fn(entering)
+
+local function pathOf(o) return (o:GetFullName():gsub("^%S+ ", "")) end
+
+local function placeArea(at, extent, yaw, onChange)
+    if not areaClass then
+        for _, a in ipairs(FindAllOf("SwtAdventureMovementModifierArea") or {}) do
+            if a:IsValid() and a:GetClass():GetFName():ToString():find("^BP_MovementModifier_Loud") then
+                areaClass = a:GetClass()
+                if WaCaNative_HookAreas then WaCaNative_HookAreas(a:GetAddress()) end
+                break
+            end
+        end
+    end
+    if not areaClass then return nil end
+    local path
+    local ok, err = pcall(function()
+        local p = pc().Pawn
+        local area = p:GetWorld():SpawnActor(areaClass, at, { pitch = 0, Yaw = yaw or 0, Roll = 0 })
+        area.MovementFlag = 0
+        area.TriggerBox:SetCollisionProfileName(FName("OverlapAllDynamic"), true)
+        area.TriggerBox:SetBoxExtent(extent, true)
+        path = pathOf(area)
+        areas[path] = onChange
+    end)
+    if not ok then log("duties: a trigger box couldn't be placed (%s)", tostring(err)) end
+    return path
+end
+
+local function removeArea(path)
+    if not path then return end
+    areas[path] = nil
+    local a = StaticFindObject(path)
+    if a and a:IsValid() then pcall(function() a:K2_DestroyActor() end) end
+end
+
+local function playerPos()
+    local p = pc() and pc().Pawn
+    return p and p:K2_GetActorLocation()
+end
+
+-- the camp - THE GAME'S OWN: its zone-name triggers (WrcZoneNameTrigger: ZoneCode "R-05", ZoneNameId
+-- STR_RIVERCLAN_ZONE_5 = "RiverClan Camp"; big boxes over an area + thin gate pairs where one zone hands over to the next
+-- - tools/camp_map.py draws them). The camp's zone = the one whose boxes hold the most of the player's clan's story cats
+-- (the deputy, the leader, the medicine cat ...). In / out of camp = the zone the cat last walked into (the triggers'
+-- OnOverlapBegin, watched with the entering actor); its gates are the camp's entrances (the night watch's guard spot).
+-- Fallback without zones: the story cats' median + a radius, asked at the cat's footsteps.
+local camp = { code = nil, boxes = {}, gates = {}, center = nil, inside = false, entry = nil, zoneSeen = false }
+
+local function inBox(b, p, margin)
+    local dx, dy = p.X - b.x, p.Y - b.y
+    local yaw = math.rad(b.yaw)
+    local lx = dx * math.cos(yaw) + dy * math.sin(yaw)
+    local ly = -dx * math.sin(yaw) + dy * math.cos(yaw)
+    return math.abs(lx) <= b.ex + (margin or 0) and math.abs(ly) <= b.ey + (margin or 0)
+end
+
+local function campInside(p)
+    if not p then return false end
+    if camp.code then
+        -- the zone's boxes are its name triggers, not its whole floor (VM: the deputy stands 4.5 m outside them): the
+        -- rectangle around its area boxes, + 10 m (VM: every story cat and den door of the camp is in it)
+        local h = camp.hull
+        return p.X >= h.x0 and p.X <= h.x1 and p.Y >= h.y0 and p.Y <= h.y1
+    end
+    local c = camp.center
+    return c and math.sqrt((p.X - c.X) ^ 2 + (p.Y - c.Y) ^ 2) <= (camp.radius or cfg.campRadius) or false
+end
+
+local function clanName()
+    local pr = WaCa.GameProgress()
+    local me = pr and pr["Gameplay.Combat.Character.Cat.Player"]
+    return me and me.Customization and me.Customization:match("ClanType=(%w+)") or nil
+end
+
+-- the game's zone boxes: { code, name, x, y, ex, ey, yaw } (a gate: one side under 1.5 m)
+local function zoneBoxes()
+    local out = {}
+    for _, z in ipairs(FindAllOf("WrcZoneNameTrigger") or {}) do
+        pcall(function()
+            if not z:IsValid() then return end
+            local comp = z.DetectionComponent
+            local c, e = comp:K2_GetComponentLocation(), comp:GetScaledBoxExtent()
+            table.insert(out, { code = z.ZoneCode:ToString(), name = z.ZoneNameId:ToString(), x = c.X, y = c.Y,
+                ex = e.X, ey = e.Y, yaw = comp:K2_GetComponentRotation().Yaw, gate = math.min(e.X, e.Y) < 150 })
+        end)
+    end
+    return out
+end
+
+local onCamp
+local function findCamp()
+    local mine = clanName()
+    local cats = {}
+    for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
+        pcall(function()
+            local r = a:IsValid() and not a.bHidden and a.narrativeRole and roleName(a.narrativeRole)
+            if r and mine and r:find("^" .. mine) then table.insert(cats, a:K2_GetActorLocation()) end
+        end)
+    end
+    if #cats == 0 and not mine then
+        log("duties: no clan known - back-in-camp can't be told")
+        return false
+    end
+    -- the game's camp zone (VM 2026-10-28, all four: R-05, S-08, T-10, W-04 - "<Clan> Camp"): of the player's clan's
+    -- zones (the code's letter = the clan's initial) the one with the most DEN DOORS in its outline (every camp has 6-7;
+    -- the other clans' story cats aren't in the world, the doors always are); else the zone holding the most of the
+    -- clan's story cats
+    local zones = zoneBoxes()
+    local hulls = {}
+    for _, b in ipairs(zones) do
+        if not b.gate then
+            local h = hulls[b.code] or { x0 = math.huge, y0 = math.huge, x1 = -math.huge, y1 = -math.huge }
+            local r = math.max(b.ex, b.ey)
+            h.x0, h.x1 = math.min(h.x0, b.x - r - 1000), math.max(h.x1, b.x + r + 1000)
+            h.y0, h.y1 = math.min(h.y0, b.y - r - 1000), math.max(h.y1, b.y + r + 1000)
+            hulls[b.code] = h
+        end
+    end
+    local count, why = {}, "den doors"
+    local initial = mine and mine:sub(1, 1)
+    for _, door in ipairs(FindAllOf("SwtAdventureHousingDoorActor") or {}) do
+        pcall(function()
+            local q = door:K2_GetActorLocation()
+            for code, h in pairs(hulls) do
+                if code:sub(1, 1) == initial and q.X >= h.x0 and q.X <= h.x1 and q.Y >= h.y0 and q.Y <= h.y1 then
+                    count[code] = (count[code] or 0) + 1
+                end
+            end
+        end)
+    end
+    local best
+    for code, n in pairs(count) do if not best or n > count[best] then best = code end end
+    if not (best and count[best] >= 3) then
+        count, why, best = {}, "story cats", nil
+        for _, b in ipairs(zones) do
+            if not b.gate then
+                for _, p in ipairs(cats) do if inBox(b, p, 300) then count[b.code] = (count[b.code] or 0) + 1 end end
+            end
+        end
+        for code, n in pairs(count) do if not best or n > count[best] then best = code end end
+        if best and count[best] < 2 then best = nil end
+    end
+    if best then
+        camp.code = best
+        local h = { x0 = math.huge, y0 = math.huge, x1 = -math.huge, y1 = -math.huge }
+        for _, b in ipairs(zones) do
+            if b.code == best then
+                table.insert(b.gate and camp.gates or camp.boxes, b)
+                camp.name = b.name
+                -- (the area boxes only: the gates sit on the zone's border, next to the neighbour's - VM: a rectangle
+                -- around them took in the neighbouring zone's gate)
+                if not b.gate then
+                    local r = math.max(b.ex, b.ey)
+                    h.x0, h.x1 = math.min(h.x0, b.x - r), math.max(h.x1, b.x + r)
+                    h.y0, h.y1 = math.min(h.y0, b.y - r), math.max(h.y1, b.y + r)
+                end
+            end
+        end
+        h.x0, h.y0, h.x1, h.y1 = h.x0 - 1000, h.y0 - 1000, h.x1 + 1000, h.y1 + 1000
+        camp.hull = h
+        camp.inside = campInside(playerPos())
+        camp.stepInside = camp.inside
+        log("duties: the camp is the game's zone %s (%s): %d areas, %d entrances, %.0f x %.0f m (by its %d %s); your cat is %s",
+            best, tostring(camp.name), #camp.boxes, #camp.gates, (h.x1 - h.x0) / 100, (h.y1 - h.y0) / 100, count[best],
+            why, camp.inside and "in it" or "out")
+        return true
+    end
+    -- no zones: the story cats' median + the farthest within CampMax
+    if #cats == 0 then
+        log("duties: no camp zone and no story cats of %s - back-in-camp can't be told", tostring(mine))
+        return false
+    end
+    local xs, ys = {}, {}
+    for i, p in ipairs(cats) do xs[i], ys[i] = p.X, p.Y end
+    table.sort(xs) table.sort(ys)
+    local m = math.floor((#xs + 1) / 2)
+    camp.center = { X = xs[m], Y = ys[m], Z = cats[1].Z }
+    local far = 0
+    for _, p in ipairs(cats) do
+        local d = math.sqrt((p.X - camp.center.X) ^ 2 + (p.Y - camp.center.Y) ^ 2)
+        if d <= cfg.campMax and d > far then far = d end
+    end
+    camp.radius = math.max(cfg.campRadius, far + 1000)
+    camp.inside = campInside(playerPos())
+    log("duties: no camp zone - the camp is around %d story cats, %.0f m across; your cat is %s", #cats,
+        camp.radius / 50, camp.inside and "in it" or "out")
+    return true
+end
+
+-- the guard spot: the camp entrance (gate) nearest to where your cat last came in, else that spot, else an edge
+local function guardSpot()
+    local ref = camp.entry or playerPos()
+    local best, bd
+    for _, g in ipairs(camp.gates) do
+        local d = ref and ((g.x - ref.X) ^ 2 + (g.y - ref.Y) ^ 2) or 0
+        if not bd or d < bd then best, bd = g, d end
+    end
+    if best then return { X = best.x, Y = best.y, Z = (ref and ref.Z) or 0 } end
+    if camp.entry then return camp.entry end
+    local c = camp.center
+    return c and { X = c.X + (camp.radius or cfg.campRadius), Y = c.Y, Z = c.Z } or nil
+end
+
+local function marker(point)
+    local path
+    pcall(function()
+        local m = pc().Pawn:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 })
+        pcall(function() m.SenseTrackedComponent.bTrackingEnabled = true end)
+        pcall(function() m:OnQuestTracked(true, nil) end)
+        path = pathOf(m)
+    end)
+    return path
+end
+
+-- --- the loop ---
+
+local NAMES = { Hunt = "hunting", Patrol = "patrol", Train = "training", Free = "free time", NightWatch = "night watch",
+                Sleep = "sleep" }
+
+local function thirdName(i) return THIRDS[i or (today and today.third) or 1] or "Night" end
+
+local function thirdAt(h)
+    local hs = cfg.hours
+    local function within(a, b) return (h - a) % 24 < (b - a) % 24 end
+    if within(hs.Morning, hs.Noon) then return 1 end
+    if within(hs.Noon, hs.Evening) then return 2 end
+    if within(hs.Evening, hs.Night) then return 3 end
+    return 4
+end
+
+local function describe(t)
+    if not t then return "" end
+    if t.kind == "Hunt" then return string.format("hunt %d prey (%d)", t.need, t.got) end
+    if t.kind == "Patrol" and t.points then
+        local d = 0
+        for _, pt in ipairs(t.points) do if pt.done then d = d + 1 end end
+        return string.format("patrol %d border points (%d)", #t.points, d)
+    end
+    if t.kind == "Train" and t.who then return "spar with " .. t.who end
+    return NAMES[t.kind] or t.kind
+end
+
+local function context()
+    local t = today and today.task
+    return { DAY = today and today.day, THIRD = thirdName():lower(), TASK = t and describe(t) or "",
+             N = t and (t.need or (t.points and #t.points)) or "", DEPUTY = cfg.deputyName,
+             WHO = t and t.who or "", RESTKEY = cfg.restKey }
+end
+
+local function append(into, steps) for _, s in ipairs(steps or {}) do table.insert(into, s) end end
+local function hook(name) return { kind = "Hook", value = name } end
+
+-- move the sky on to a later third's hour of the same day - never across the morning (the next day comes only with a
+-- rest or the night watch: VM 2026-10-28, a restored night hour moved "to the night" went round the clock and ended
+-- two days at once), and not at all when the clock is in that third already (a session starting mid-third)
+local function setClock(name)
+    local h = DayNight.Hour()
+    if not h then return end
+    local want = name == "Night" and 4 or (name == "Noon" and 2 or (name == "Evening" and 3 or 1))
+    local now = thirdAt(h)
+    if now >= want then return end
+    local diff = (cfg.hours[name] - h) % 24
+    if diff > 1e-6 then DayNight.Advance(diff) end
+end
+
+local function pileValue()
+    local pile = 100
+    pcall(function() pile = tonumber(WaCa.GameProgress().FreshKill.Value) or 100 end)
+    return pile
+end
+
+-- the third's task: the story's choice, else picked by weight ([Tasks]) from the clan's needs - hunting counts
+-- PileFactor x when the fresh-kill pile is low, training only up to [Train] MaxRank
+local function pickKind(name)
+    if plan and plan.kinds and plan.kinds[name] then return plan.kinds[name] end
+    local r, rank = ranks()
+    local canTrain = cfg.train and not (rank and r[cfg.trainMaxRank] and rank > r[cfg.trainMaxRank])
+    local low = pileValue() < cfg.pileLow
+    local options, total = {}, 0
+    for kind, weight in pairs(cfg.weights[name] or {}) do
+        local x = weight
+        if kind == "Hunt" and low then x = x * cfg.pileFactor end
+        if kind == "Train" and not canTrain then x = 0 end
+        if kind == "Hunt" and plan and plan.hunt == 0 then x = 0 end
+        if kind == "Patrol" and plan and plan.patrol == 0 then x = 0 end
+        if x > 0 then
+            table.insert(options, { kind, x })
+            total = total + x
+        end
+    end
+    if total <= 0 then return name == "Night" and "Sleep" or "Free" end
+    local roll = math.random() * total
+    for _, o in ipairs(options) do
+        roll = roll - o[2]
+        if roll <= 0 then return o[1] end
+    end
+    return options[#options][1]
+end
+
+local taskDone, thirdEnd, startThird
+
+local function cleanup(t)
+    if t.ground then removeMarker(t.ground) end
+    for _, pt in ipairs(t.points or {}) do
+        removeMarker(pt)
+        removeArea(pt.area)
+    end
+    removeArea(t.area)
+    if t.guardMarker then removeMarker({ marker = t.guardMarker }) end
+    companionsLeave(t.companions)
+    t.companions = nil
+end
+
+-- a patrol point / the teacher / the guard spot reached
+local function reached(t, what, i)
+    if t.done or not today or today.task ~= t then return end
+    if what == "point" then
+        local pt = t.points[i]
+        if pt.done then return end
+        pt.done = true
+        removeMarker(pt)
+        removeArea(pt.area)
+        log("duties: border point %d checked", i)
+        local all = true
+        for _, q in ipairs(t.points) do if not q.done then all = false end end
+        if all then taskDone(t) else card(string.format("Border point checked - %s.", describe(t))) end
+    elseif what == "teacher" then
+        if t.fighting or WaCa.InMenu() then return end
+        if startSpar(t) then
+            t.fighting = true
+            log("duties: sparring with %s", t.who)
+        end
+    elseif what == "guard" then
+        t.done = true
+        cleanup(t)
+        log("duties: on night watch")
+        local steps = {}
+        append(steps, cfg.watchScene)
+        table.insert(steps, hook("ClanNight"))
+        Events.Run(steps, function()
+            WaCa.Emit("TaskDone", today.day, "Night", "NightWatch")
+            today.blackout = true
+            DayNight.Skip(1)            -- the night passes: DayEnded (the verdict), DayStarted (the morning)
+        end, context())
+    end
+end
+
+-- the task's setup: markers out in the territory, trigger boxes, companions, the partner
+local function setUp(kind)
+    local t = { kind = kind, third = today.third }
+    if kind == "Hunt" then
+        t.need = math.max(1, (plan and plan.hunt) or (pileValue() < cfg.pileLow and cfg.huntMax or math.random(cfg.huntMin, cfg.huntMax)))
+        t.got = 0
+        if cfg.huntingGround then t.ground = huntingGround() end
+    elseif kind == "Patrol" then
+        t.points = patrolPoints((plan and plan.patrol) or cfg.patrolPoints)
+        if #t.points == 0 then
+            log("duties: no border points to place - free time instead")
+            t.kind, t.points = "Free", nil
+        else
+            for i, pt in ipairs(t.points) do
+                pt.area = placeArea(pt, { X = cfg.reach, Y = cfg.reach, Z = 1000 }, 0, function(entering)
+                    if entering then reached(t, "point", i) end
+                end)
+            end
+            t.companions = companionsJoin(cfg.companions)
+        end
+    elseif kind == "Train" then
+        local partner = trainingPartner()
+        if partner then
+            t.path, t.role, t.who = partner.path, partner.role, partner.who
+            local a = StaticFindObject(t.path)
+            if a and a:IsValid() then
+                t.area = placeArea(a:K2_GetActorLocation(), { X = cfg.reach / 2, Y = cfg.reach / 2, Z = 500 }, 0, function(entering)
+                    if entering then reached(t, "teacher") end
+                end)
+            end
+        else
+            log("duties: no one to train with - free time instead")
+            t.kind = "Free"
+        end
+    elseif kind == "NightWatch" then
+        local spot = guardSpot()
+        if spot then
+            t.spot = spot
+            t.guardMarker = marker(spot)
+        else
+            log("duties: no guard spot (no camp) - sleep instead")
+            t.kind = "Sleep"
+        end
+    end
+    return t
+end
+
+-- the deputy assigns the third's task
+local function assign()
+    local name = thirdName()
+    local kind = pickKind(name)
+    if not KINDS[kind] then
+        log("duties: unknown task %s for the %s - free time", tostring(kind), name)
+        kind = "Free"
+    end
+    local t = setUp(kind)
+    today.task, today.stage = t, "task"
+    table.insert(today.record, t)
+    log("duties: day %d, %s - the deputy: %s", today.day, name, describe(t))
+    WaCa.Emit("TaskAssigned", today.day, name, t.kind)
+    local steps = {}
+    append(steps, cfg.assignScenes[t.kind] or { { kind = "Card", value = "{DEPUTY}: {TASK}." } })
+    table.insert(steps, hook("ClanAssign"))
+    Events.Run(steps, function()
+        if t.kind == "Free" then taskDone(t) end
+        if t.kind == "Sleep" then today.stage = "sleep" end
+    end, context())
+end
+
+-- the task is done: the rest of the third is yours - its turn-in (when you like) ends the third
+taskDone = function(t)
+    if t.done and t.kind ~= "Free" and t.kind ~= "Hunt" then return end
+    local first = not t.done
+    t.done = true
+    if t.kind ~= "Hunt" then cleanup(t) end            -- a hunt's ground stays: hunt on as long as you like
+    if first then
+        log("duties: %s - %s done", thirdName(), NAMES[t.kind])
+        WaCa.Emit("TaskDone", today.day, thirdName(), t.kind)
+    end
+    if today.task ~= t or today.stage ~= "task" then return end
+    -- the task's END POINT (operator 2026-10-28: not just walking into camp): its turn-in ([Task.<Kind>] TurnIn) -
+    -- Pile = the catch onto the fresh-kill pile, Partner = talk to the cat the task was with (training: the mentor),
+    -- a role (Deputy, Leader, MedicineCat ...) = report to that cat, None = done is the end
+    local turnIn = cfg.turnIn[t.kind] or "None"
+    if turnIn == "None" then
+        today.stage = "turnin"
+        return thirdEnd()
+    end
+    today.stage = "turnin"
+    today.turnIn = turnIn
+    local after = { Hunt = "Hunting duty done - hunt on if you like, every catch still feeds the clan.",
+                    Patrol = "Patrol done - make your own way back, or explore on.", Train = "Training done.",
+                    Free = "The " .. thirdName():lower() .. " is yours." }
+    local where = { Pile = "Bring your catch to the fresh-kill pile when you're back.",
+                    Partner = "Talk to " .. (t.who or "them") .. " when you're both back in camp." }
+    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:lower() .. " when you're back.")))
+end
+
+-- the turn-in happened: the third ends (Pile: the game's own contribution; Partner / a role: a talk with that cat)
+local function turnedIn(how)
+    if not today or today.stage ~= "turnin" or today.turnIn ~= how then return false end
+    log("duties: %s turned in (%s)", NAMES[today.task and today.task.kind or "Free"] or "task", how)
+    WaCa.Emit("TaskTurnedIn", today.day, thirdName(), today.task and today.task.kind, how)
+    thirdEnd()
+    return true
+end
+
+-- the clan's events of a third: every [Event.*] of clanevents.ini whose When is this third, on its days, by chance
+local function pickEvents(name, day)
+    local out = {}
+    for _, e in ipairs(cfg.clanEvents) do
+        local dayOk = (not e.day or day >= e.day) and (not e.every or (day - (e.day or 1)) % e.every == 0)
+            and (not e.only or day == e.only)
+        if e.when == name and dayOk and not (e.once and eventsDone[e.name]) and Events.Check(e.require)
+            and math.random() * 100 < e.chance then
+            table.insert(out, e)
+        end
+    end
+    return out
+end
+
+-- the third's end (the task turned in): the story's beats, the clan's events, then the next third
+thirdEnd = function()
+    if not today or today.stage ~= "turnin" then return end
+    today.stage = "event"
+    local name = thirdName()
+    log("duties: the %s's end - its events", name:lower())
+    WaCa.Emit("ClanThirdEnded", today.day, name)
+    -- the ORDER (operator 2026-10-28: a story's cutscene after the hand-in, BEFORE or AFTER the clan's event): numbered
+    -- slots, lowest first - the story's beats 100 (days.ini <Third>), the clan's events 200 (each its own Order =),
+    -- the story's after-beats 300 (<Third>After), duties.ini [Third.X] Event 350, the blocking hook ClanThirdEnd 400
+    local parts = {}
+    local function part(order, steps, what)
+        if steps and #steps > 0 then table.insert(parts, { order = order, steps = steps, what = what, n = #parts }) end
+    end
+    part(100, Days and Days.Beats and Days.Beats(name), "the story")
+    for _, e in ipairs(pickEvents(name, today.day)) do
+        part(e.order or 200, e.steps, "clan event " .. e.name)
+        if e.once then eventsDone[e.name] = true end
+    end
+    part(300, Days and Days.Beats and Days.Beats(name .. "After"), "the story (after)")
+    part(350, cfg.thirdScenes[name] and cfg.thirdScenes[name].Event, "duties.ini")
+    part(400, { hook("ClanThirdEnd") }, "the hook")
+    table.sort(parts, function(a, b) if a.order ~= b.order then return a.order < b.order end return a.n < b.n end)
+    local steps, order = {}, {}
+    for _, pt in ipairs(parts) do
+        append(steps, pt.steps)
+        if pt.what ~= "the hook" then table.insert(order, string.format("%s (%d)", pt.what, pt.order)) end
+    end
+    if #order > 0 then log("duties: the %s's end: %s", name:lower(), table.concat(order, ", ")) end
+    local day = today
+    Events.Run(steps, function()
+        if today ~= day then return end
+        if day.third < 4 then startThird(day.third + 1)
+        else
+            day.stage = "sleep"
+            card("Night has fallen - rest in your den when you're ready.")
+        end
+    end, context())
+end
+
+onCamp = function(entering)
+    if entering ~= camp.inside then log("duties: your cat %s the camp", entering and "walks into" or "leaves") end
+    camp.inside = entering
+    if entering then camp.entry = playerPos() end
+    if today and not entering then today.leftCamp = true end
+    WaCa.Emit(entering and "CampEntered" or "CampLeft", today and today.day, today and thirdName())
+end
+
+-- a third begins: the clock moves on to it, its beats, then the deputy
+startThird = function(i, why)
+    local name = thirdName(i)
+    today.third, today.stage, today.task, today.leftCamp = i, "start", nil, false
+    setClock(name)
+    log("duties: day %d - the %s begins (%s)", today.day, name:lower(), why or "the loop")
+    WaCa.Emit(i == 4 and "ClanNight" or "ClanThird", today.day, name)
+    local steps = {}
+    if today.blackout then
+        today.blackout = false
+        table.insert(steps, { kind = "FadeIn", value = "2" })
+    end
+    append(steps, Days and Days.Beats and Days.Beats(name .. "Start"))
+    append(steps, cfg.thirdScenes[name] and cfg.thirdScenes[name].Start)
+    table.insert(steps, hook("ClanThirdStart"))
+    local day = today
+    Events.Run(steps, function() if today == day then assign() end end, context())
+end
+
+-- the day's end (the morning after, or a rest): the tasks done raise standing, missed ones lower it
+local function verdict()
+    if not today then return end
+    local done, missed, bonus = 0, 0, 0
+    for _, t in ipairs(today.record) do
+        cleanup(t)
+        if COUNTED[t.kind] then
+            if t.done then
+                done = done + 1
+                if t.kind == "NightWatch" then bonus = bonus + cfg.watchStanding end
+            else
+                missed = missed + 1
+            end
+        end
+    end
+    local change = done * cfg.standingDone + missed * cfg.standingMissed + bonus
+    standing = standing + change
+    log("duties: day %d over - %d done, %d missed: standing %+d = %d", today.day, done, missed, change, standing)
+    card(string.format("The day is over: %d of %d done. Your standing in the clan: %d.", done, done + missed, standing))
+    WaCa.Emit("DutiesJudged", today.day, done, missed, standing)
+    local blackout = today.blackout
+    today = nil
+    return blackout
+end
+
+local function newDay(n, why)
+    if not rankAllows() then
+        today = nil
+        log("duties: your cat hands out the duties now (rank %s or above) - none for you", cfg.maxRank)
+        return
+    end
+    today = { day = n, record = {}, blackout = pendingBlackout }
+    pendingBlackout = nil
+    startThird(why == "dawn" and 1 or thirdAt(DayNight.Hour() or cfg.hours.Morning), why)
+end
+
+-- a fight is over (its end screen / the combat manager's EndCombat, the second within seconds the same one; the end
+-- screen also shows while a world loads - only a fight whose popup opened counts): a running spar counts
+local lastFight, inFight = -100, false
+local function fightOver()
+    if not inFight or os.clock() - lastFight < 5 then return end
+    inFight = false
+    lastFight = os.clock()
+    local t = today and today.task
+    if not (t and t.kind == "Train" and t.fighting) then return end
+    t.fighting = false
+    local bond = t.role and cfg.trainBond > 0 and WaCaNative_AddBond and WaCaNative_AddBond(t.role, cfg.trainBond)
+    log("duties: sparring done%s", bond and string.format(" - bond with %s +%d", t.who, cfg.trainBond) or "")
+    taskDone(t)
+end
+
+-- where the cat is - in / out of the camp, a patrol point / the teacher / the guard spot reached: asked at the cat's
+-- own footsteps (every StepEvery-th - walking is what changes it) and at sense pulses. The trigger boxes report the
+-- same where they work (VM 2026-10-28: a box spawned at the camp reported nothing for teleports - the steps carry it).
+local function where()
+    local p = playerPos()
+    if not p then return end
+    -- (always, next to the zone events: teleports - fast travel, respawns, cutscenes - cross no gate; VM: after a
+    -- teleport back into camp the zones alone never told. Each signal acts when ITS answer changes.)
+    if camp.code or camp.center then
+        local inside = campInside(p)
+        if not camp.checked then
+            camp.checked = true
+            log("duties: the camp check reads your cat's steps (%.0f %.0f: %s)", p.X, p.Y, inside and "in camp" or "out")
+        end
+        if inside ~= camp.stepInside then
+            camp.stepInside = inside
+            if inside ~= camp.inside then onCamp(inside) end
+        end
+    end
+    local t = today and today.task
+    if not t or t.done then return end
+    local function dist(q) return q and math.sqrt((q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2) or math.huge end
+    if t.kind == "Patrol" then
+        for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.reach then reached(t, "point", i) end end
+    elseif t.kind == "Train" then
+        local a = StaticFindObject(t.path)
+        if a and a:IsValid() and dist(a:K2_GetActorLocation()) <= cfg.reach then reached(t, "teacher") end
+    elseif t.kind == "NightWatch" and t.spot then
+        -- (night falls with your cat right where it came in - the spot counts once it has stepped away and back)
+        local d = dist(t.spot)
+        if d > 800 then t.armed = true end
+        if t.armed and d <= 400 then reached(t, "guard") end
+    end
+end
+
+function Duties.Standing() return standing end
+function Duties.Now()
+    return today and { day = today.day, third = thirdName(), stage = today.stage, task = today.task and today.task.kind }
+end
+-- day scripts (days.lua): the story day's choices (nil = the clan's needs decide) - prey / border points, and a task
+-- per third: { Morning = "Train", Night = "Hunt" (a night hunt) ... }
+function Duties.Plan(hunt, patrol, kinds)
+    plan = (hunt or patrol or (kinds and next(kinds))) and { hunt = hunt, patrol = patrol, kinds = kinds } or nil
+end
+function Duties.Today() return today end
+-- for other modules (patrols.lua ...): the camp - { middle = {X,Y,Z}, inside = bool, code = the game's zone } - and N
+-- border points out in the territory (unmarked)
+function Duties.Camp()
+    local mid = camp.center
+    if camp.hull then
+        local h = camp.hull
+        mid = { X = (h.x0 + h.x1) / 2, Y = (h.y0 + h.y1) / 2, Z = (camp.boxes[1] and playerPos() and playerPos().Z) or 0 }
+    end
+    return { middle = mid, inside = camp.inside, code = camp.code }
+end
+function Duties.BorderPoints(n, from)
+    local pts = {}
+    for _, g in ipairs(FindAllOf("BP_Enemy_Generator_C") or {}) do
+        pcall(function()
+            local q = g:K2_GetActorLocation()
+            local d = from and math.sqrt((q.X - from.X) ^ 2 + (q.Y - from.Y) ^ 2) or cfg.minDist
+            if d >= cfg.minDist and d <= cfg.maxDist then table.insert(pts, { X = q.X, Y = q.Y, Z = q.Z }) end
+        end)
+    end
+    local out = {}
+    for _ = 1, math.min(n, #pts) do table.insert(out, table.remove(pts, math.random(#pts))) end
+    return out
+end
+
+local function sidecar() return WaCa.SlotFile("WaCaDuties") end
+
+-- "Kind:weight, Kind:weight" -> { Kind = weight }
+local function weights(text)
+    local out = {}
+    for kind, w in tostring(text):gmatch("(%a+)%s*:%s*([%d%.]+)") do out[kind] = tonumber(w) end
+    return out
+end
+
+function Duties.Init(c)
+    WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
+    Events, Days = c.Events or require("events"), c.Days
+    local ini = WaCa.ReadContent(c.modDir .. "/config/duties.ini", "duties") or {}
+    local d = ini["Duties"] or {}
+    cfg.on = (d.On or "0") == "1"
+    cfg.maxRank = (d.MaxRank or "") ~= "" and d.MaxRank or cfg.maxRank
+    cfg.deputyName = (d.DeputyName or "") ~= "" and d.DeputyName or "The deputy"
+    cfg.campRadius = tonumber(d.CampRadius or "") or cfg.campRadius
+    cfg.campMax = tonumber(d.CampMax or "") or cfg.campMax
+    local th = ini["Thirds"] or {}
+    for _, name in ipairs({ "Morning", "Noon", "Evening", "Night" }) do
+        cfg.hours[name] = tonumber(th[name] or "") or cfg.hours[name]
+        local sec = ini["Third." .. name]
+        cfg.thirdScenes[name] = { Start = Events.Lines(sec, "Start"), Event = Events.Lines(sec, "Event") }
+    end
+    local tk = ini["Tasks"] or {}
+    for _, name in ipairs({ "Morning", "Noon", "Evening", "Night" }) do
+        if (tk[name] or "") ~= "" then cfg.weights[name] = weights(tk[name]) end
+    end
+    cfg.pileFactor = tonumber(tk.PileFactor or "") or cfg.pileFactor
+    for kind in pairs(KINDS) do
+        local steps = Events.Lines(ini["Assign." .. kind], "Step")
+        if #steps > 0 then cfg.assignScenes[kind] = steps end
+    end
+    for kind in pairs(KINDS) do
+        local tsec = ini["Task." .. kind]
+        if tsec and (tsec.TurnIn or "") ~= "" then cfg.turnIn[kind] = tsec.TurnIn end
+    end
+    local w = ini["NightWatch"] or {}
+    cfg.watchStanding = tonumber(w.Standing or "") or cfg.watchStanding
+    cfg.watchScene = Events.Lines(w, "Step")
+    if #cfg.watchScene == 0 then
+        cfg.watchScene = { { kind = "Fade", value = "2" }, { kind = "Card", value = "You keep watch until dawn." } }
+    end
+    local h = ini["Hunt"] or {}
+    cfg.huntMin = math.max(0, math.floor(tonumber(h.Min or "") or cfg.huntMin))
+    cfg.huntMax = math.max(cfg.huntMin, math.floor(tonumber(h.Max or "") or cfg.huntMax))
+    cfg.pileLow = tonumber(h.PileLow or "") or cfg.pileLow
+    cfg.pilePerPrey = tonumber(h.PilePerPrey or "") or cfg.pilePerPrey
+    cfg.huntingGround = (h.HuntingGround or "1") ~= "0"
+    local p = ini["Patrol"] or {}
+    cfg.patrolPoints = math.max(0, math.floor(tonumber(p.Points or "") or cfg.patrolPoints))
+    cfg.reach = tonumber(p.Reach or "") or cfg.reach
+    cfg.companions = math.max(0, math.floor(tonumber(p.Companions or "") or cfg.companions))
+    cfg.minDist = tonumber(p.MinDistance or "") or cfg.minDist
+    cfg.maxDist = tonumber(p.MaxDistance or "") or cfg.maxDist
+    local t = ini["Train"] or {}
+    cfg.train = (t.On or "1") ~= "0"
+    cfg.trainMaxRank = (t.MaxRank or "") ~= "" and t.MaxRank or cfg.trainMaxRank
+    cfg.trainBond = tonumber(t.Bond or "") or cfg.trainBond
+    local s = ini["Standing"] or {}
+    cfg.standingDone = tonumber(s.Done or "") or cfg.standingDone
+    cfg.standingMissed = tonumber(s.Missed or "") or cfg.standingMissed
+    -- the clan's events (clanevents.ini)
+    local ev = WaCa.ReadContent(c.modDir .. "/config/clanevents.ini", "clanevents") or {}
+    for section, sec in pairs(ev) do
+        local name = section:match("^Event%.(.+)$")
+        if name and (sec.When or "") ~= "" and sec.Off ~= "1" then
+            table.insert(cfg.clanEvents, { name = name, when = sec.When, chance = tonumber(sec.Chance or "") or 100,
+                day = tonumber(sec.Day or ""), every = tonumber(sec.Every or ""), only = tonumber(sec.OnlyDay or ""),
+                once = (sec.Once or "0") == "1", require = sec.Require, order = tonumber(sec.Order or ""),
+                steps = Events.Lines(sec, "Step") })
+        end
+    end
+    table.sort(cfg.clanEvents, function(a, b) return a.name < b.name end)
+    pcall(function() cfg.restKey = (WaCa.ReadIni(c.modDir .. "/config/timeskip.ini") or {}).TimeSkip.RestKey end)
+    cfg.restKey = cfg.restKey or "F9"
+    Events.Provide("Standing", function() return standing end)
+    log("duties: %s (%d clan events)", cfg.on and "on" or "off", #cfg.clanEvents)
+    if not cfg.on then return end
+    if not DayNight.Drive(cfg.hours.Morning) then
+        log("duties: the clan loop needs the day / night cycle (daynight.ini On = 1) - off")
+        return
+    end
+    -- the first world of a session: the camp and the loop after the world has streamed in (spawning earlier crashed)
+    local armed = false
+    WaCa.On("ScreenShown", function(screen)
+        local name = screen:GetClass():GetFName():ToString()
+        if name == "WBP_GuiPopupCombat_C" then inFight = true end
+        if name == "WBP_GuiHudCombatOver_C" then fightOver() end
+        if armed or not name:find("^WBP_GuiHudGame") then return end
+        armed = true
+        ExecuteInGameThreadWithDelay(30000, function()
+            ready = true
+            findCamp()
+            if not today then newDay(DayNight.Day() or 1, "the session starts") end
+        end)
+    end)
+    -- the turn-ins: the game's own fresh-kill contribution (its achievements manager hears of every one), and a talk
+    -- with the deputy (the dialogue screen's NpcRef is the cat talked to)
+    WaCa.Watch("OnContributeFreshKill", "/Script/Wrc.WrcAchievementsManager", "WaCaPileContribution", "post")
+    WaCa.On("WaCaPileContribution", function() turnedIn("Pile") end)
+    WaCa.On("ScreenShown", function(screen)
+        local how = today and today.stage == "turnin" and today.turnIn
+        if not how or how == "Pile" or how == "None" then return end
+        local ok, npc = pcall(function() return screen.NpcRef end)
+        if not (ok and npc and npc:IsValid()) then return end
+        local t = today.task
+        if how == "Partner" then
+            if t and t.path and pathOf(npc) == t.path then turnedIn("Partner") end
+        else
+            local role = npc.narrativeRole and roleName(npc.narrativeRole) or ""
+            if role:find(how .. "$") then turnedIn(how) end
+        end
+    end)
+    WaCa.Watch("EndCombat", "/Script/SwtAdventure.SwtAdventureCombatManager", "WaCaFightEnd", "post")
+    WaCa.On("WaCaFightEnd", function() fightOver() end)
+    WaCa.On("AreaOverlap", function(_, area, other, entering)
+        local fn = areas[tostring(area):gsub("^%S+ ", "")]
+        if not fn then return end
+        local pawn = pc() and pc().Pawn
+        if not (pawn and tostring(other):gsub("^%S+ ", "") == pathOf(pawn)) then return end
+        fn(entering == "1")
+    end)
+    WaCa.On("DayEnded", function() pendingBlackout = verdict() end)
+    WaCa.On("DayStarted", function(n) if ready then newDay(n, "dawn") end end)
+    WaCa.Watch("BlendProgress", "/Script/SwtAdventure.SwtAdventureExplorationSenseComponent", "WaCaDutySense", "post")
+    WaCa.On("WaCaDutySense", function() where() end)
+    -- the game's zones: the cat walked into a zone (its trigger's own overlap, with the actor that entered)
+    WaCa.Watch("OnOverlapBegin", "/Script/Wrc.WrcZoneNameTrigger", "WaCaZoneEnter", "post", "OtherActor")
+    WaCa.On("WaCaZoneEnter", function(trigger, other)
+        local pawn = pc() and pc().Pawn
+        local ok, mine = pcall(function() return other:GetAddress() == pawn:GetAddress() end)
+        if not (ok and mine and camp.code) then return end
+        local code = trigger.ZoneCode:ToString()
+        if not camp.zoneSeen then log("duties: zones report (%s)", code) end
+        camp.zoneSeen = true
+        local inside = code == camp.code
+        if inside ~= camp.inside then onCamp(inside) end
+    end)
+    -- the player's own footsteps (the step notify hands over the stepping mesh - the notify is shared by all cats)
+    local steps = 0
+    WaCa.Watch("Received_Notify", "/Game/Gameplay/Blueprints/BP_AnimStepNotify.BP_AnimStepNotify_C", "CatStep", "pre", "MeshComp")
+    -- (every cat's steps arrive here: the player's cat's address is kept, not looked up per step; the look is a few
+    -- distance checks - on EVERY step: a walk is only a couple of steps on a slow machine, and every 4th step kept
+    -- landing on the same side of a teleport, VM 2026-10-28)
+    local me
+    WaCa.On("CatStep", function(_, mesh)
+        local ok, owner = pcall(function() return mesh:GetOwner():GetAddress() end)
+        if not ok then return end
+        if owner ~= me then
+            local pawn = pc() and pc().Pawn
+            me = pawn and pawn:GetAddress() or me
+            if owner ~= me then return end
+        end
+        steps = steps + 1
+        if steps % cfg.stepEvery == 0 then where() end
+    end)
+    WaCa.On("HuntCaught", function()
+        local t = today and today.task
+        if not (t and t.kind == "Hunt") then return end
+        t.got = t.got + 1
+        local pile = pileComponent()
+        local now = pile and cfg.pilePerPrey > 0 and WaCaNative_AddResource and WaCaNative_AddResource(pile:GetAddress(), cfg.pilePerPrey)
+        log("duties: prey caught (%d of %d)%s", t.got, t.need, now and string.format(" - fresh-kill pile %.0f", now) or "")
+        if t.got == t.need then taskDone(t) end
+    end)
+    -- standing + the one-time clan events live with the save (written when the game saves)
+    WaCa.On("GameSaved", function()
+        local slot = WaCa.CurrentSlot()
+        if slot and restoredFor ~= slot then
+            restoredFor = slot
+            local data = WaCa.ReadIni(sidecar() or "") or {}
+            standing = tonumber((data["Standing"] or {}).Value or "") or 0
+            eventsDone = {}
+            for k, v in pairs(data["EventsHeld"] or {}) do if k ~= "__order" and v == "1" then eventsDone[k] = true end end
+        end
+        local path = sidecar()
+        if path then
+            local held = { __order = {} }
+            for k in pairs(eventsDone) do held[k] = "1" table.insert(held.__order, k) end
+            WaCa.WriteIni(path, { Standing = { Value = tostring(standing), __order = { "Value" } }, EventsHeld = held,
+                __order = { "Standing", "EventsHeld" } }, "; WaCa Clan Life - your cat's standing in the clan (duties.ini)")
+        end
+    end)
+end
+
+return Duties
