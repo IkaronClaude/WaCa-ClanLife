@@ -36,7 +36,7 @@ local Events = {}
 
 local WaCa, log, modDir, DayNight
 local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
-local cfg = { cardSeconds = 5, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260 }
+local cfg = { cardSeconds = 5, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260, gatherArc = 90 }
 local list = {}                  -- hour-scheduled scenes: { name, day, every, hour, steps, once }
 local done = {}                  -- one-time scenes already played in this save
 local restoredFor
@@ -178,10 +178,12 @@ end
 
 -- --- staging: clanmates gathered around a place, poses (the game's own animation montages) ---
 
--- Gather: <n> [@ Here | Pile]   the n nearest clanmates come together in a ring around your cat (Here, the default) or
+-- Gather: <n> [@ Here | Pile]   the n nearest clanmates come together in an arc facing your cat (Here, the default) or
 --                                the clan's fresh-kill pile, facing its middle - a cut, like a cutscene: the screen
---                                fades, they are placed, it fades back in. (The camp's cats are placed scenery - quest
---                                actors with no controller to walk them, VM 2026-10-28.)
+--                                fades, they are placed, it fades back in. The cats are the camp's walking cats - the
+--                                game's own AI characters, which it shows once your cat is near (the camp's quest
+--                                actors moved the same way never drew: VM 2026-10-28); their AI waits while they're
+--                                gathered, so they don't pace off.
 -- Pose: <pose> [@ Gathered | Player | All | <who>]   the cats play one of the game's animation montages: Sit, Lie
 --                                (lying down to rest), Sleep, Eat, Sniff, Meow, Play, Groom - or a montage's object path
 -- Release                        the screen fades and the gathered cats are back where they were
@@ -265,8 +267,11 @@ local function placeOf(where)
     return at
 end
 
--- the clanmates near a place: the camp's cats (quest actors that are cats - filler cats and story cats, not the
--- pile / the merchant) and roaming clan cats, nearest first
+-- the clanmates near a place, nearest first: the camp's walking cats (BP_WalkingNPC_Character_Base_C - the game
+-- walks them on its paths with its AI and hides them while your cat is far: VM 2026-10-28, all 6 near RiverClan's camp
+-- were hidden at 24-48 m and shown, drawn and pacing again within a second of being moved in) and roaming clan cats.
+-- (Not the camp's quest actors - the fillers, the deputy ...: the game parks most of them - 38 of 41 fillers had their
+-- body switched off - and the ones moved never drew, though their bodies said visible.)
 local function clanmatesNear(place, n, radius)
     local found = {}
     local function consider(a)
@@ -274,8 +279,8 @@ local function clanmatesNear(place, n, radius)
         local d = math.sqrt((q.X - place.X) ^ 2 + (q.Y - place.Y) ^ 2)
         if d > 1 and d <= radius then table.insert(found, { a, d }) end
     end
-    for _, a in ipairs(FindAllOf("BP_Quest_Filler_C") or {}) do
-        pcall(function() if a:IsValid() and not a.bHidden then consider(a) end end)
+    for _, c in ipairs(FindAllOf("SwtAdventureWalkingNPC") or {}) do
+        pcall(function() if c:IsValid() and not c.bHidden then consider(c) end end)
     end
     for _, c in ipairs(FindAllOf("BP_Exploration_Character_Base_C") or {}) do
         pcall(function() if c:IsValid() and c.CharacterType == 1 and not c.bHidden then consider(c) end end)
@@ -284,6 +289,34 @@ local function clanmatesNear(place, n, radius)
     local out = {}
     for i = 1, math.min(n, #found) do out[i] = found[i][1] end
     return out
+end
+
+-- a gathered cat stays put: its AI waits and its movement is off while it's staged (pausing the brain alone wasn't
+-- enough - the cats paced 40-490 from a 260 ring: VM 2026-10-28), on again when it's let go. Returns what held.
+local function holdAI(cat, on)
+    local held = {}
+    pcall(function()
+        local ctl = cat.Controller
+        if not (ctl and ctl:IsValid()) then return end
+        if on then
+            ctl:StopMovement()
+            if pcall(function() ctl.BrainComponent:PauseLogic("WaCa gathering") end) then held[#held + 1] = "brain" end
+        else
+            pcall(function() ctl.BrainComponent:ResumeLogic("WaCa gathering") end)
+        end
+    end)
+    pcall(function()
+        local move = cat.CharacterMovement
+        if not (move and move:IsValid()) then return end
+        if on then
+            move:StopMovementImmediately()
+            move:DisableMovement()
+            held[#held + 1] = "movement"
+        else
+            move:SetMovementMode(1, 0)                                  -- (walking)
+        end
+    end)
+    return table.concat(held, "+")
 end
 
 local function fadeScreen(from, to, seconds)
@@ -297,25 +330,39 @@ function Events.Gather(n, where, ctx, done)
     if not place then return done() end
     local cats = clanmatesNear(place, n, cfg.gatherRadius)
     if #cats == 0 then
-        log("events: gather - no clanmates within %.0f m of %.0f %.0f (%d camp cats in the world)", cfg.gatherRadius / 100,
-            place.X, place.Y, #(FindAllOf("BP_Quest_Filler_C") or {}))
+        log("events: gather - no walking clan cats within %.0f m of %.0f %.0f", cfg.gatherRadius / 100,
+            place.X, place.Y)
         return done()
     end
     ctx.gathered, ctx.place = {}, place
     fadeScreen(0, 1, FADE)
     ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
+        local held = {}
+        -- (an arc in front of the camera, not a full ring: the game's camera sits ~1 m behind your cat, so a ring put
+        -- two cats behind it, two off the sides and one hidden behind your cat - VM 2026-10-28)
+        local facing = 0
+        pcall(function() facing = pc().PlayerCameraManager:GetCameraRotation().Yaw end)
         for i, cat in ipairs(cats) do
             pcall(function()
-                local a = (i - 1) / #cats * 2 * math.pi
+                local step = #cats > 1 and (i - 1) / (#cats - 1) - 0.5 or 0
+                local a = math.rad(facing + step * cfg.gatherArc)
                 local spot = { X = place.X + math.cos(a) * cfg.gatherRing, Y = place.Y + math.sin(a) * cfg.gatherRing,
-                               Z = cat:K2_GetActorLocation().Z }
+                               Z = place.Z + 20 }
                 local yaw = math.deg(math.atan(place.Y - spot.Y, place.X - spot.X))
-                table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")), loc = cat:K2_GetActorLocation(),
-                                             rot = cat:K2_GetActorRotation() })
-                cat:K2_SetActorLocationAndRotation(spot, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                -- (copied out: the returned structs are live views that don't keep the old values - the release put
+                -- nobody back: VM 2026-10-28)
+                local l, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()
+                table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")),
+                                             loc = { X = l.X, Y = l.Y, Z = l.Z }, rot = { Pitch = r.Pitch, Yaw = r.Yaw, Roll = r.Roll } })
+                cat:K2_SetActorLocationAndRotation(spot, { Pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                held[#held + 1] = holdAI(cat, true)
             end)
         end
-        log("events: gather - %d clanmate(s) around %s", #ctx.gathered, where or "your cat")
+        local names = {}
+        for i, e in ipairs(ctx.gathered) do
+            names[#names + 1] = (e.path:match("[^.:]+$") or e.path) .. " (held: " .. (held[i] ~= "" and held[i] or "nothing") .. ")"
+        end
+        log("events: gather - %d clanmate(s) around %s: %s", #ctx.gathered, where or "your cat", table.concat(names, ", "))
         fadeScreen(1, 0, FADE)
         ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done)
     end)
@@ -333,7 +380,9 @@ function Events.Release(ctx, done)
             local a = StaticFindObject(e.path)
             if a and a:IsValid() then
                 stopMontage(a)
-                pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
+                local ok, err = pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
+                if not ok then log("events: release - %s stays: %s", e.path, tostring(err)) end
+                holdAI(a, false)
             end
         end
         pcall(function() stopMontage(pc().Pawn) end)

@@ -61,7 +61,7 @@ folder with `enabled.txt` and a `content` folder, and never edits anyone else's 
 - a plain key is set by the later mod (logged); `Off = 1` in your copy of a section turns another mod's off.
 
 **Scenes** are lines of steps, run one after another, each waiting for its end:
-`Card: <text>`, `Gather: <n> @ Here|Pile` (the nearest clanmates in a ring around you), `Pose: <Sit|Lie|Sleep|Eat|
+`Card: <text>`, `Gather: <n> @ Here|Pile` (the camp's nearest walking clanmates, in an arc facing you), `Pose: <Sit|Lie|Sleep|Eat|
 Sniff|Meow|Play|Groom> @ Gathered|Player|All|<who>` (the game's animations), `Release` (they go back),
 `Dialogue: <id> @ <who>` (the game's own conversations and cinematics - ids in
 `config\events-dialogues.txt`, written the first time you're in the world; who = Deputy, Leader, MedicineCat, Teacher,
