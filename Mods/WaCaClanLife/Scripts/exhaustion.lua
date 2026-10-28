@@ -11,24 +11,12 @@ local WaCa, log, DayNight
 local cfg = { on = false, perPounce = 3, perFight = 10, late = 22, dawn = 5, lateFactor = 1.5,
               levels = { { name = "Tired", at = 60, speed = 0.85, hunt = 0.85, damage = 0.9 },
                          { name = "Exhausted", at = 85, speed = 0.65, hunt = 0.6, damage = 0.75 } } }
-local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
 local tired = 0
 local level = 0                     -- 0 = fresh, 1 = Tired, 2 = Exhausted
 local restoredFor
 
 local function card(text)
-    pcall(function()
-        local c
-        for _, x in ipairs(FindAllOf("SwtPlayerController") or {}) do if x:IsValid() and x.Player then c = x end end
-        local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(c, WaCa.LoadAsset(CARD), c)
-        w:AddToViewport(60)
-        w.mcGuiTextInfo:SetText(FText(text))
-        local name = (w:GetFullName():gsub("^%S+ ", ""))
-        ExecuteInGameThreadWithDelay(6000, function()
-            local o = StaticFindObject(name)
-            if o and o:IsValid() then o:RemoveFromParent() end
-        end)
-    end)
+    require("events").Card(text, 6)          -- (the mod's one card queue: never two cards at once)
 end
 
 -- the effects of the current level: walking speed through WaCa Core (its one speed for every mod's slow-downs: the

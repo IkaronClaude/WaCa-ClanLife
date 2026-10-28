@@ -7,7 +7,8 @@
 --   Follow.Release(group)                          the cats get their own AI back
 --   Follow.Nearest(n, radius, at) -> cats          the nearest clanmates (helper)
 -- cats: actors or their object paths. opts: distance (the first follower's, cm; 300), spread (each next one's extra;
--- 120), sneak = "hold" (default) | "follow", every (how many of the leader's footsteps between checks; 3).
+-- 120), sneak = "hold" (default) | "follow", every (how many of the leader's footsteps between checks; 3), ring = true
+-- (Travel: the cats stand in a circle of radius cm around the place, the place itself left free).
 -- How: each cat's own AI (its brain) is paused and its AIController moves it (MoveToActor / MoveToLocation - the
 -- engine's pathfinding); the checks hang off FOOTSTEPS (the game's step notify for every cat, the stepping mesh handed
 -- over - VM 2026-10-28), so nothing runs while nobody moves; sneaking is the game's own crouch event
@@ -38,7 +39,12 @@ local function dist(a, b)
 end
 
 -- the i-th spot of a loose formation around a place (rings of 6)
-local function slot(place, i, spread)
+local function slot(place, i, spread, ring, count)
+    if ring then
+        -- a circle around the place (the place itself stays free: the player's cat, the fresh-kill pile ...)
+        local a = (i - 1) / math.max(1, count) * 2 * math.pi
+        return { X = place.X + math.cos(a) * ring, Y = place.Y + math.sin(a) * ring, Z = place.Z }
+    end
     if i == 1 then return place end
     local ring = math.floor((i - 2) / 6) + 1
     local a = ((i - 2) % 6) / 6 * 2 * math.pi + ring * 0.5
@@ -61,7 +67,7 @@ local function check(g)
         if c then
             pcall(function()
                 if g.place then
-                    local spot = slot(g.place, i, g.opts.spread)
+                    local spot = slot(g.place, i, g.opts.spread, g.opts.radius, #g.cats)
                     if not g.arrived[i] and dist(cat, spot) <= g.opts.distance then g.arrived[i] = true
                     elseif not g.arrived[i] then c:MoveToLocation(spot, g.opts.distance / 2, true, true, false, true, nil, true) end
                 elseif leader and not g.held then
@@ -87,6 +93,7 @@ local function newGroup(cats, opts)
     nextId = nextId + 1
     local g = { id = nextId, cats = {}, arrived = {}, steps = 0,
                 opts = { distance = (opts and opts.distance) or 300, spread = (opts and opts.spread) or 120,
+                         radius = opts and opts.ring and (opts.radius or 250) or nil,
                          sneak = (opts and opts.sneak) or "hold", every = (opts and opts.every) or 3 } }
     for _, c in ipairs(cats or {}) do
         local a = actor(c)

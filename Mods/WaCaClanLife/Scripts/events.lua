@@ -3,7 +3,12 @@
 -- as days: days.lua; hour-scheduled scenes: config/events.ini [Event.<Name>]).
 --
 -- A scene = steps run one after another, each waiting for its own end (written as config lines, or Lua tables):
---   Card: <text>                 the game's centre message, CardSeconds long ({DAY}, {THIRD}, {DEPUTY} ... filled)
+--   Card: <text>                 the game's centre message, CardSeconds long ({DAY}, {THIRD}, {DEPUTY} ... filled);
+--                                cards queue - never two at once
+--   Gather: <n> [@ Here|Pile]    the n nearest clanmates come and stand in a ring around your cat / the fresh-kill pile
+--   Pose: <pose> [@ Gathered|Player|All|<who>]   an animation: Sit, Lie, Sleep, Eat, Sniff, Meow, Play, Groom (the
+--                                game's montages) or a montage path
+--   Release                      the gathered cats go back to their own lives
 --   Dialogue: <id> [@ <who>]     one of the game's own conversations / cinematics (SwtQuestSequencerManager:
 --                                PlaySequenceDialogue; the ids: events-dialogues.txt) with <who>; waits until it is
 --                                over (the sequencer reports its end / the dialogue screen closes)
@@ -31,7 +36,7 @@ local Events = {}
 
 local WaCa, log, modDir, DayNight
 local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
-local cfg = { cardSeconds = 6, dialogueMax = 300, startWait = 15 }
+local cfg = { cardSeconds = 5, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260 }
 local list = {}                  -- hour-scheduled scenes: { name, day, every, hour, steps, once }
 local done = {}                  -- one-time scenes already played in this save
 local restoredFor
@@ -46,21 +51,46 @@ local function pc()
     end
 end
 
-local function showCard(text, seconds)
+-- Cards: ONE AT A TIME (operator 2026-10-28: the day's verdict and the morning's card came together and overlapped) -
+-- every card of the mod goes through this queue; each shows for its seconds, then the next. onShown / onGone: when it
+-- comes up / goes (a scene's Card step waits for its own card to go).
+local cards = { queue = {}, showing = false }
+
+local function nextCard()
+    if not cards.queue[1] then
+        cards.showing = false
+        return
+    end
+    cards.showing = true
+    -- (not over a conversation, a cutscene or a menu: the card waits for it)
+    if WaCa.InMenu() then
+        ExecuteInGameThreadWithDelay(1000, nextCard)
+        return
+    end
+    local c = table.remove(cards.queue, 1)
     local ok, err = pcall(function()
         local class = WaCa.LoadAsset(CARD)
         local controller = pc()
         local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, class, controller)
         w:AddToViewport(60)
-        w.mcGuiTextInfo:SetText(FText(text))       -- after AddToViewport (its construct sets a string-table key)
-        local name = (w:GetFullName():gsub("^%S+ ", ""))
-        ExecuteInGameThreadWithDelay(math.floor(seconds * 1000), function()
-            local o = StaticFindObject(name)
-            if o and o:IsValid() then o:RemoveFromParent() end
-        end)
+        w.mcGuiTextInfo:SetText(FText(c.text))     -- after AddToViewport (its construct sets a string-table key)
+        c.name = (w:GetFullName():gsub("^%S+ ", ""))
     end)
     if not ok then log("events: card failed (%s)", tostring(err)) end
+    ExecuteInGameThreadWithDelay(math.floor(c.seconds * 1000), function()
+        local o = c.name and StaticFindObject(c.name)
+        if o and o:IsValid() then o:RemoveFromParent() end
+        if c.onGone then pcall(c.onGone) end
+        nextCard()
+    end)
 end
+
+function Events.Card(text, seconds, onGone)
+    table.insert(cards.queue, { text = text, seconds = seconds or cfg.cardSeconds, onGone = onGone })
+    if not cards.showing then nextCard() end
+end
+
+local function showCard(text, seconds, onGone) Events.Card(text, seconds, onGone) end
 
 -- --- who: story cats by their part in the clan ---
 
@@ -76,9 +106,7 @@ local function roleName(v)
 end
 
 local function clan()
-    local p = WaCa.GameProgress()
-    local me = p and p["Gameplay.Combat.Character.Cat.Player"]
-    return me and me.Customization and me.Customization:match("ClanType=(%w+)") or nil
+    return WaCa.PlayerClan()          -- (the cat in the world's, else the save's)
 end
 
 -- the clanmate nearest to the player's cat (NPC cats: CharacterType Cat)
@@ -148,11 +176,181 @@ function Events.Who(name)
     return fallback
 end
 
+-- --- staging: clanmates gathered around a place, poses (the game's own animation montages) ---
+
+-- Gather: <n> [@ Here | Pile]   the n nearest clanmates come together in a ring around your cat (Here, the default) or
+--                                the clan's fresh-kill pile, facing its middle - a cut, like a cutscene: the screen
+--                                fades, they are placed, it fades back in. (The camp's cats are placed scenery - quest
+--                                actors with no controller to walk them, VM 2026-10-28.)
+-- Pose: <pose> [@ Gathered | Player | All | <who>]   the cats play one of the game's animation montages: Sit, Lie
+--                                (lying down to rest), Sleep, Eat, Sniff, Meow, Play, Groom - or a montage's object path
+-- Release                        the screen fades and the gathered cats are back where they were
+local POSES = {
+    Sit = { "AM_CatMaster_SimpleSit" }, Lie = { "AM_Interact_Sleep_1" },
+    Sleep = { "AM_Interact_Sleep_1", "AM_Interact_Sleep_2", "AM_Interact_Sleep_3" }, Eat = { "AM_Interact_Bite_1" },
+    Sniff = { "AM_Interact_Sniffing" }, Meow = { "AM_Meow" }, Play = { "AM_Interact_Play" }, Groom = { "AM_Interact_Sharpen" },
+}
+local MONTAGES = "/Game/Art/Characters/CatMaster/Animations/Montages/"
+local FADE = 0.8
+
+local function montage(pose)
+    local names = POSES[pose]
+    local path = names and (MONTAGES .. names[math.random(#names)]) or pose
+    if not path:find("%.") then path = path .. "." .. path:match("([^/]+)$") end
+    local ok, m = pcall(WaCa.LoadAsset, path)
+    return ok and m and m:IsValid() and m or nil
+end
+
+local function poseTargets(who, ctx)
+    local out = {}
+    local pawn = pc() and pc().Pawn
+    who = who or "Gathered"
+    if who == "Gathered" or who == "All" then
+        for _, g in ipairs(ctx and ctx.gathered or {}) do
+            local a = StaticFindObject(g.path)
+            if a and a:IsValid() then table.insert(out, a) end
+        end
+    end
+    if (who == "Player" or who == "All") and pawn then table.insert(out, pawn) end
+    if #out == 0 and who ~= "Gathered" and who ~= "All" and who ~= "Player" then
+        local a = Events.Who(who)
+        if a then table.insert(out, a) end
+    end
+    return out
+end
+
+-- a montage on any cat: a Character plays it itself; placed scenery (the camp's quest actors) through its mesh
+local meshClass
+local function playMontage(cat, m)
+    if pcall(function() cat:PlayAnimMontage(m, 1.0, FName("None")) end) then return true end
+    meshClass = meshClass or StaticFindObject("/Script/Engine.SkeletalMeshComponent")
+    return pcall(function()
+        local mesh = cat:GetComponentByClass(meshClass)
+        mesh:GetAnimInstance():Montage_Play(m, 1.0, 0, 0.0, true)
+    end)
+end
+
+local function stopMontage(cat)
+    if pcall(function() cat:StopAnimMontage(nil) end) then return end
+    pcall(function()
+        meshClass = meshClass or StaticFindObject("/Script/Engine.SkeletalMeshComponent")
+        cat:GetComponentByClass(meshClass):GetAnimInstance():Montage_Stop(0.25, nil)
+    end)
+end
+
+function Events.Pose(pose, who, ctx)
+    local n = 0
+    for _, cat in ipairs(poseTargets(who, ctx)) do
+        local m = montage(pose)
+        if m and playMontage(cat, m) then n = n + 1 end
+    end
+    log("events: pose %s - %d cat(s) (%s)", tostring(pose), n, tostring(who or "Gathered"))
+end
+
+local function placeOf(where)
+    local pawn = pc() and pc().Pawn
+    if not pawn then return nil end
+    local at = pawn:K2_GetActorLocation()
+    if where == "Pile" then
+        local best, bd
+        for _, a in ipairs(FindAllOf("BP_Quest_Giver_FreshKill_C") or {}) do
+            pcall(function()
+                local q = a:K2_GetActorLocation()
+                local d = (q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2
+                if not bd or d < bd then best, bd = q, d end
+            end)
+        end
+        if best and bd < 6000 ^ 2 then return best end
+    end
+    return at
+end
+
+-- the clanmates near a place: the camp's cats (quest actors that are cats - filler cats and story cats, not the
+-- pile / the merchant) and roaming clan cats, nearest first
+local function clanmatesNear(place, n, radius)
+    local found = {}
+    local function consider(a)
+        local q = a:K2_GetActorLocation()
+        local d = math.sqrt((q.X - place.X) ^ 2 + (q.Y - place.Y) ^ 2)
+        if d > 1 and d <= radius then table.insert(found, { a, d }) end
+    end
+    for _, a in ipairs(FindAllOf("BP_Quest_Filler_C") or {}) do
+        pcall(function() if a:IsValid() and not a.bHidden then consider(a) end end)
+    end
+    for _, c in ipairs(FindAllOf("BP_Exploration_Character_Base_C") or {}) do
+        pcall(function() if c:IsValid() and c.CharacterType == 1 and not c.bHidden then consider(c) end end)
+    end
+    table.sort(found, function(a, b) return a[2] < b[2] end)
+    local out = {}
+    for i = 1, math.min(n, #found) do out[i] = found[i][1] end
+    return out
+end
+
+local function fadeScreen(from, to, seconds)
+    pcall(function()
+        pc().PlayerCameraManager:StartCameraFade(from, to, seconds, { R = 0, G = 0, B = 0, A = 1 }, true, true)
+    end)
+end
+
+function Events.Gather(n, where, ctx, done)
+    local place = placeOf(where)
+    if not place then return done() end
+    local cats = clanmatesNear(place, n, cfg.gatherRadius)
+    if #cats == 0 then
+        log("events: gather - no clanmates within %.0f m of %.0f %.0f (%d camp cats in the world)", cfg.gatherRadius / 100,
+            place.X, place.Y, #(FindAllOf("BP_Quest_Filler_C") or {}))
+        return done()
+    end
+    ctx.gathered, ctx.place = {}, place
+    fadeScreen(0, 1, FADE)
+    ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
+        for i, cat in ipairs(cats) do
+            pcall(function()
+                local a = (i - 1) / #cats * 2 * math.pi
+                local spot = { X = place.X + math.cos(a) * cfg.gatherRing, Y = place.Y + math.sin(a) * cfg.gatherRing,
+                               Z = cat:K2_GetActorLocation().Z }
+                local yaw = math.deg(math.atan(place.Y - spot.Y, place.X - spot.X))
+                table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")), loc = cat:K2_GetActorLocation(),
+                                             rot = cat:K2_GetActorRotation() })
+                cat:K2_SetActorLocationAndRotation(spot, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+            end)
+        end
+        log("events: gather - %d clanmate(s) around %s", #ctx.gathered, where or "your cat")
+        fadeScreen(1, 0, FADE)
+        ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done)
+    end)
+end
+
+function Events.Release(ctx, done)
+    local g = ctx and ctx.gathered
+    if not (g and #g > 0) then
+        if done then done() end
+        return
+    end
+    fadeScreen(0, 1, FADE)
+    ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
+        for _, e in ipairs(g) do
+            local a = StaticFindObject(e.path)
+            if a and a:IsValid() then
+                stopMontage(a)
+                pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
+            end
+        end
+        pcall(function() stopMontage(pc().Pawn) end)
+        ctx.gathered = nil
+        log("events: release - the clanmates are back in their places")
+        fadeScreen(1, 0, FADE)
+        if done then ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done) end
+    end)
+end
+
 -- --- the step runner ---
 
 -- "Kind: value [@ who]" -> { kind, value, who }
 function Events.Parse(line)
     local kind, rest = tostring(line):match("^%s*(%a+)%s*:%s*(.-)%s*$")
+    -- (a step with nothing after it: "Release")
+    if not kind then kind, rest = tostring(line):match("^%s*(%a+)%s*$"), "" end
     if not kind then return nil end
     local value, who = rest:match("^(.-)%s*@%s*(%S+)$")
     return { kind = kind, value = value or rest, who = who }
@@ -261,8 +459,14 @@ local function runStep(s, ctx, nextStep, stop)
     elseif k == "If" then
         if Events.Check(s.value) then nextStep() else stop() end
     elseif k == "Card" then
-        showCard(fill(s.value, ctx), cfg.cardSeconds)
-        after(cfg.cardSeconds, nextStep)
+        showCard(fill(s.value, ctx), cfg.cardSeconds, nextStep)
+    elseif k == "Gather" then
+        Events.Gather(tonumber(s.value) or 5, s.who, ctx, nextStep)
+    elseif k == "Pose" then
+        Events.Pose(s.value, s.who, ctx)
+        nextStep()
+    elseif k == "Release" then
+        Events.Release(ctx, nextStep)
     elseif k == "Wait" then
         after(tonumber(s.value) or 1, nextStep)
     elseif k == "Fade" or k == "FadeIn" then
@@ -428,7 +632,7 @@ function Events.Init(c)
         if waiting and screen:GetClass():GetFName():ToString():find("Dialog") then dialogueOver("its screen closed") end
     end)
     Events.Provide("Day", function() return DayNight and DayNight.Day() or 0 end)
-    Events.Provide("Rank", function() local p = WaCa.GameProgress() return p and tonumber(p.Rank) or 0 end)
+    Events.Provide("Rank", function() return (WaCa.PlayerRank()) or 0 end)
     -- story variables live with the save (a sidecar, written when the game saves)
     local varsFor
     WaCa.On("GameSaved", function()

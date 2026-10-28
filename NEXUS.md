@@ -25,14 +25,16 @@ a way to tell their own stories in it, without programming.
   against the clock.
 - **Seasons and weather** - newleaf, greenleaf, leaf-fall and leaf-bare, each with its own light. Rain and snow fall
   around your cat, rain with its sound. Prey follows the season - leaf-bare is lean.
-- **Rest** - your cat sleeps and the night passes, with a card in the game's own style.
+- **Rest** - at night your cat goes to its den - its own or its rank's - lies down, and the night passes, with a card in
+  the game's own style.
 - **Exhaustion** - only pouncing and fighting tire your cat. Walking and exploring are always free.
 
 ### The clan's day
-- **The deputy assigns your task** each morning, noon and evening: hunt for the fresh-kill pile, patrol the border with
+- **The deputy assigns your task** each morning and afternoon (deputies and leaders give out the clan's tasks at its
+  meeting place instead): hunt for the fresh-kill pile, patrol the border with
   clanmates, train with your mentor, or free time. Explore as long as you like - a finished task never drags you home.
-- **Clan events**: meetings, and in the evening the clan **eats together and shares tongues**.
-- **Night**: sleep, or keep **night watch** at the camp's entrance.
+- **Clan events**: meetings, and in the evening the clan gathers around you to **eat together and share tongues**.
+- **Night**: sleep in your den, or keep **night watch** at the camp's entrance.
 - **Gatherings**: the leader picks who goes - your standing and the leader's favour count. Not chosen? Someone has to
   guard the camp...
 - **The day at a glance** - a panel in the game's own quest style shows the time of day, your task and how far along

@@ -7,8 +7,6 @@ local TimeSkip = {}
 
 local WaCa, log, DayNight, Weather
 local cfg = { on = false, key = nil, days = 1, hour = nil, seconds = 6, title = "" }
-local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
-local card                       -- the card on screen (its full name: held objects can go stale)
 
 local function pc()
     for _, c in ipairs(FindAllOf("SwtPlayerController") or {}) do
@@ -25,31 +23,10 @@ local function fill(s, days, from, to)
         :gsub("{WEATHER}", weather and weather:lower() or ""))
 end
 
-local function hideCard()
-    if not card then return end
-    local w = StaticFindObject(card)
-    card = nil
-    if w and w:IsValid() then pcall(function() w:RemoveFromParent() end) end
-end
-
 -- the card: the game's centre-message popup with our text, for cfg.seconds
 local function showCard(text)
-    hideCard()
-    local ok, err = pcall(function()
-        local class = WaCa.LoadAsset(CARD)
-        local controller = pc()
-        if not class or not controller then error("no popup class / player") end
-        local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, class, controller)
-        w:AddToViewport(60)
-        -- after AddToViewport: its construct fills the text from its own string table key (empty here)
-        w.mcGuiTextInfo:SetText(FText(text))
-        pcall(function() w.CanvasMessage:SetVisibility(0) end)
-        pcall(function() if w.MainAnimation then w:PlayAnimation(w.MainAnimation, 0, 1, 0, 1, false) end end)
-        card = (w:GetFullName():gsub("^%S+ ", ""))
-        local mine = card
-        ExecuteInGameThreadWithDelay(math.floor(cfg.seconds * 1000), function() if card == mine then hideCard() end end)
-    end)
-    if not ok then log("timeskip: the card couldn't show (%s)", tostring(err)) end
+    -- (the mod's one card queue - events.lua: never two cards at once; at dawn this one came on top of the day's verdict)
+    require("events").Card(text, cfg.seconds)
 end
 
 -- skip `days` days (the new day starts at WakeHour)

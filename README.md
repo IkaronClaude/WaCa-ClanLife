@@ -17,27 +17,31 @@ plays.
   fog; rain and snow fall around your cat, rain with its sound (the mod's own small content pak). Hunting and fishing
   get easier or harder with them (with WaCa Hunting).
 - **Prey follows the season**: in leaf-bare only part of the mice, rabbits and birds are about, hardly any squirrels.
-- **Rest** (`timeskip.ini`): your cat rests with F9 and the night (or `RestDays`) passes - a card in the game's style
-  says so, and the season and weather move on.
+- **Rest** (`timeskip.ini`): when the night passes (sleeping, or a rest key if you set one - `RestKey`, none by
+  default) a card in the game's style says so, and the season and weather move on.
 - **Exhaustion** (`exhaustion.ini`): a resource, not a meter - only pounces and fights tire your cat (more late at
   night); walking and exploring cost nothing. Tired, your cat moves slower and hunts and fights worse. Sleep resets
   it.
 
 ## The clan's day
-- **The clan loop** (`duties.ini`, `clanevents.ini`): the day in thirds - morning, noon, evening. Each third the deputy
-  gives your cat a task: hunt (the catch goes onto the fresh-kill pile), patrol the border (clanmates walk with you,
-  report to the deputy), training (a sparring fight - talk to your mentor afterwards) or free time. Do it and explore as
-  long as you like - a done task never sends you home - then turn it in at its end point. Then the clan's event of the
-  third, if any: a clan meeting, the Gathering, eating together and **sharing tongues** in the evening. After the
-  evening: sleep, or the **night watch** at the camp's entrance (a short scene shows the night passing). Tasks done
-  raise your standing in the clan; missed ones lower it.
+- **The clan loop** (`duties.ini`, `clanevents.ini`): morning and afternoon are duties - each time the deputy gives
+  your cat a task: hunt (the catch goes onto the fresh-kill pile), patrol the border (clanmates walk with you, report
+  to the deputy), training (a sparring fight - talk to your mentor afterwards) or free time. Do it and explore as long
+  as you like - a done task never sends you home - then turn it in at its end point. Then the clan's event, if any (a
+  clan meeting, the Gathering). The **evening** is the clan together: your clanmates gather around you, eat and
+  **share tongues** - a short staged scene. At **night**, go to your den - your own or your rank's (apprentices',
+  warriors' ...) - and your cat lies down and sleeps until morning; or the **night watch** at the camp's entrance. Tasks
+  done raise your standing in the clan; missed ones lower it. The clan's day waits while a conversation or cutscene is
+  up (a new game's intro), and its cards come one at a time.
 - **The day at a glance**: while the loop runs, a panel like the game's own quest objective (left side of the HUD)
   shows the day and third, your task, where to go and how far along you are ("Prey 1/3"), then how to turn it in
   (`clanlife.ini [Hud]`).
-- **Deputies and leaders lead their own day** (from `duties.ini MaxRank` on): each third is yours - the report key in
-  camp ends it, and the clan's events and the night follow as usual.
+- **Deputies and leaders lead the clan's day** (from `duties.ini MaxRank` on): each morning and afternoon the clan's
+  meeting place is marked - go there and give out the tasks (the report key); the evening and the night follow as
+  usual. Your rank is the game's own record: its rank quests in your save (WaCa Core's `player.rank`).
 - **Turn-ins never get stuck**: reporting to the deputy (or your mentor) is a conversation with them - or the report
-  key (`F`, `duties.ini ReportKey`) next to them, for when the game has nothing for them to say.
+  key (`F`, `duties.ini ReportKey`) next to them. The deputy answers in his own words (`duties.ini [Talk]`: your
+  report, or a reminder of your task) instead of the game's "nothing new for you".
 - **Each clan's camp** is found from the game's own camp zone (`R-05`, `T-10` ...) - the loop knows when you're home.
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
@@ -57,7 +61,9 @@ folder with `enabled.txt` and a `content` folder, and never edits anyone else's 
 - a plain key is set by the later mod (logged); `Off = 1` in your copy of a section turns another mod's off.
 
 **Scenes** are lines of steps, run one after another, each waiting for its end:
-`Card: <text>`, `Dialogue: <id> @ <who>` (the game's own conversations and cinematics - ids in
+`Card: <text>`, `Gather: <n> @ Here|Pile` (the nearest clanmates in a ring around you), `Pose: <Sit|Lie|Sleep|Eat|
+Sniff|Meow|Play|Groom> @ Gathered|Player|All|<who>` (the game's animations), `Release` (they go back),
+`Dialogue: <id> @ <who>` (the game's own conversations and cinematics - ids in
 `config\events-dialogues.txt`, written the first time you're in the world; who = Deputy, Leader, MedicineCat, Teacher,
 Nearest or a story role), `Fade: <s>` / `FadeIn: <s>`, `Wait: <s>`, `Bond: <points> @ <who>`, `Emit: <event>`,
 `Hook: <name>`, and story variables kept with the save: `Set: LeaderFavour = 2`, `Add: GatheringBan 1`,

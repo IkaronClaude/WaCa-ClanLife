@@ -1,12 +1,15 @@
--- THE CLAN LOOP (tickets.md 15 + "the clan loop", operator 2026-10-28): the clan's day in thirds - morning, noon,
--- evening - each one the same loop:
---   the third begins (its story beats: days.ini <Third>Start) -> the DEPUTY assigns a task -> you do it, exploring as
---   long as you like (a done task never sends you home) -> you TURN IT IN at its end point ([Task.<Kind>] TurnIn: a
---   hunt at the fresh-kill pile, a patrol by reporting to the deputy, a spar is its own end) -> the clan's event of that third, if any
---   (clan meetings, ceremonies ...; the evening: eating together, sharing tongues - clanevents.ini, and the story's
---   beats: days.ini <Third>) -> the time moves on a full third -> the next assignment.
--- After the evening: the night - sleep (the rest key) or the night watch (go to the guard spot at the camp entrance:
--- a short cutscene shows the night passing), or what the story sets (days.ini NightDuty = Hunt: a night hunt).
+-- THE CLAN LOOP (tickets.md 15 + "the clan loop", operator 2026-10-28): the clan's day - the MORNING and the AFTERNOON
+-- (config name Noon) are duties, the EVENING is the clan together, then the NIGHT:
+--   a duty third begins (its story beats: days.ini <Third>Start) -> the DEPUTY assigns a task -> you do it, exploring
+--   as long as you like (a done task never sends you home) -> you TURN IT IN at its end point ([Task.<Kind>] TurnIn: a
+--   hunt at the fresh-kill pile, a patrol by reporting to the deputy, a spar is its own end) -> the clan's event of
+--   that third, if any (clan meetings, ceremonies ...: clanevents.ini, the story's beats: days.ini <Third>) -> the
+--   time moves on a full third -> the next assignment.
+--   The evening (operator 2026-10-28: not a third task): the clan gathers - eating together, sharing tongues, staged
+--   with the cats themselves (clanevents.ini When = Evening: Gather / Pose steps), the story's evening beats.
+-- Then the night - sleep in your den's nest (the game's own sleep spot: use it) or the night watch (go to the guard
+-- spot at the camp entrance: a short cutscene shows the night passing), or what the story sets (days.ini NightDuty =
+-- Hunt: a night hunt).
 -- The clan's day drives the clock (DayNight.Drive): the sky shows each third at its [Thirds] hour - no wall clock.
 -- Tasks: Hunt (N prey - every prey caught feeds the clan's pile, hunt on as long as you like), Patrol (N border points
 -- out in the territory, clanmates walk it with you), Train (a sparring fight with the clan's move teacher - the
@@ -35,7 +38,7 @@ local cfg = { on = false, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow 
               train = true, trainMaxRank = "Apprentice", trainBond = 2,
               trainTag = "Gameplay.Combat.Generator.Fixed.TrainingGrounds",
               huntingGround = true,
-              reach = 800, minDist = 3000, maxDist = 12000, standingDone = 2, standingMissed = -1, seconds = 7,
+              reach = 800, minDist = 3000, maxDist = 12000, standingDone = 2, standingMissed = -1, seconds = 5,
               hours = { Morning = 8, Noon = 13, Evening = 19, Night = 23 },
               weights = { Morning = { Hunt = 2, Patrol = 2, Train = 1 }, Noon = { Hunt = 1, Patrol = 1, Train = 2 },
                           Evening = { Patrol = 2, Hunt = 1, Free = 1 }, Night = { Sleep = 3, NightWatch = 1 } },
@@ -43,7 +46,6 @@ local cfg = { on = false, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow 
               pileFactor = 3, campRadius = 3500, campMax = 6000, watchStanding = 1, stepEvery = 1,
               reportKey = "F", reportRadius = 500,
               thirdScenes = {}, assignScenes = {}, watchScene = {}, clanEvents = {} }
-local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
 local HINT = "/Game/Gameplay/Blueprints/WorldElements/POIHintArea/BP_POI_HintArea_Quest.BP_POI_HintArea_Quest_C"
 local plan                        -- day scripts' override: { hunt = n, patrol = n, kinds = { Morning = "Hunt", ... } }
 local today                       -- { day, third = 1..3 / 4 = night, stage, task, record = { { third, kind, done } } }
@@ -59,27 +61,16 @@ local function pc()
     end
 end
 
-local function card(text)
-    pcall(function()
-        local controller = pc()
-        local w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, WaCa.LoadAsset(CARD), controller)
-        w:AddToViewport(60)
-        w.mcGuiTextInfo:SetText(FText(text))
-        local name = (w:GetFullName():gsub("^%S+ ", ""))
-        ExecuteInGameThreadWithDelay(math.floor(cfg.seconds * 1000), function()
-            local o = StaticFindObject(name)
-            if o and o:IsValid() then o:RemoveFromParent() end
-        end)
-    end)
-end
+-- (one queue for every card of the mod - events.lua: never two on screen at once)
+local function card(text) Events.Card(text, cfg.seconds) end
 
 local function ranks()
     local out = {}
     pcall(function()
         StaticFindObject("/Script/SwtQuest.ECharacterRank"):ForEachName(function(n, v) out[n:ToString():gsub("^.*::", "")] = v end)
     end)
-    local p = WaCa.GameProgress()
-    return out, p and tonumber(p.Rank)
+    local rank = WaCa.PlayerRank()       -- (the name first, then the save: WaCa.lua)
+    return out, rank
 end
 
 local function rankAllows()
@@ -323,9 +314,7 @@ local function campInside(p)
 end
 
 local function clanName()
-    local pr = WaCa.GameProgress()
-    local me = pr and pr["Gameplay.Combat.Character.Cat.Player"]
-    return me and me.Customization and me.Customization:match("ClanType=(%w+)") or nil
+    return WaCa.PlayerClan()          -- (the cat in the world's, else the save's)
 end
 
 -- the game's zone boxes: { code, name, x, y, ex, ey, yaw } (a gate: one side under 1.5 m)
@@ -457,6 +446,79 @@ local function guardSpot()
     return c and { X = c.X + (camp.radius or cfg.campRadius), Y = c.Y, Z = c.Z } or nil
 end
 
+-- YOUR NEST (operator 2026-10-28: sleep = go to your den and lie down, not a key): the game's own sleep spots
+-- (BP_Interactable_Sleep - a nest you use; its sunspot variant is a daytime nap, left out) - the one in camp nearest
+-- to your cat, else the nearest at all. Using it at night is sleeping (OnInteracted, watched below).
+local SLEEP_CLASS = "^BP_Interactable_Sleep"
+local function isNest(actor)
+    local ok, name = pcall(function() return actor:GetClass():GetFName():ToString() end)
+    return ok and name:find(SLEEP_CLASS) ~= nil and not name:find("Sunspot")
+end
+
+local function findNest()
+    local p = playerPos()
+    if not p then return nil end
+    local best, bd, bestCamp, bdCamp
+    for _, a in ipairs(FindAllOf("SwtAdventureInteractableActor") or {}) do
+        pcall(function()
+            if not (a:IsValid() and isNest(a)) then return end
+            local q = a:K2_GetActorLocation()
+            local d = (q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2
+            if not bd or d < bd then best, bd = q, d end
+            if campInside(q) and (not bdCamp or d < bdCamp) then bestCamp, bdCamp = q, d end
+        end)
+    end
+    return bestCamp or best, bestCamp and "in camp" or (best and "outside the camp" or nil)
+end
+
+-- YOUR DEN (operator 2026-10-28: rest in EITHER den - the game's own "your den", or the den of your rank): the
+-- camp's den doors (WrcHousingDoorActor: Clan, RequiredRank, a DestinationComponent inside - the warriors' door has
+-- one per rank: Warrior / Deputy / Leader) take your cat inside; arriving at a fitting den's inside point at night is
+-- going to sleep. Fitting: your clan's, and your own den ("My den") or your rank's (by the dens' names).
+-- the den of each rank (the game's den names): apprentices, warriors (the deputy too), the leader
+local RANK_DENS = { [0] = "STR_DEN_APPRENTICE", "STR_DEN_APPRENTICE", "STR_DEN_WARRIOR", "STR_DEN_WARRIOR", "STR_DEN_LEADER" }
+
+local function enumNames(path)
+    local out = {}
+    pcall(function()
+        StaticFindObject(path):ForEachName(function(n, v) out[v] = (n:ToString():gsub("^.*::", "")) end)
+    end)
+    return out
+end
+
+local function myDens()
+    local clans, rankNames = enumNames("/Script/SwtQuest.EClanType"), enumNames("/Script/SwtQuest.ECharacterRank")
+    local mine, rank = clanName(), WaCa.PlayerRank()
+    local multiClass = StaticFindObject("/Script/Wrc.WrcHousingMultiRankDestinationDoorActor")
+    local out, all = {}, {}
+    for _, door in ipairs(FindAllOf("WrcHousingDoorActor") or {}) do
+        pcall(function()
+            if not door:IsValid() or door.bIsExit then return end
+            local clan = clans[door.Clan]
+            if mine and clan and clan ~= mine then return end
+            local multi = multiClass and door:IsA(multiClass)
+            local dest = door.DestinationComponent
+            if multi and rank and rank >= 2 then
+                dest = (rank >= 4 and door.LeaderDestinationComponent) or (rank == 3 and door.DeputyDestinationComponent)
+                    or door.WarriorDestinationComponent
+            end
+            -- which den it is: its title against the game's own den names (any language); RequiredRank is only who
+            -- may go in (every den said Apprentice - VM 2026-10-28)
+            local title = door.ActorTitle:ToString()
+            local personal = title == WaCa.GetText("STR_DEN_MY") or #door.AllHotspots > 0
+            local mine = WaCa.GetText(RANK_DENS[rank or 1] or "STR_DEN_APPRENTICE")
+            local fits = personal or title == mine
+            local d = { door = door:K2_GetActorLocation(), dest = dest:K2_GetComponentLocation(), personal = personal,
+                        title = door.ActorTitle:ToString(), rank = rankNames[door.RequiredRank] or tostring(door.RequiredRank) }
+            table.insert(all, string.format("%s%s (%s)%s", d.title ~= "" and d.title or "a den", personal and " [yours]" or "",
+                multi and "Warrior/Deputy/Leader" or d.rank, fits and "" or " - not for you"))
+            if fits then table.insert(out, d) end
+        end)
+    end
+    log("duties: the dens - %s", #all > 0 and table.concat(all, "; ") or "none found")
+    return out
+end
+
 local function marker(point)
     local path
     pcall(function()
@@ -474,6 +536,12 @@ local NAMES = { Hunt = "hunting", Patrol = "patrol", Train = "training", Free = 
                 Sleep = "sleep" }
 
 local function thirdName(i) return THIRDS[i or (today and today.third) or 1] or "Night" end
+-- what the player reads: the config's Noon is the afternoon
+local LABELS = { Noon = "Afternoon" }
+local function thirdLabel(i)
+    local n = thirdName(i)
+    return LABELS[n] or n
+end
 
 local function thirdAt(h)
     local hs = cfg.hours
@@ -507,25 +575,28 @@ local function publishStatus()
     local t = today.task
     local s = { v = 1, day = today.day, third = thirdName(), stage = today.stage, task = t and t.kind,
                 turnIn = today.stage == "turnin" and today.turnIn or nil }
-    s.title = string.format("Day %d - %s", today.day, thirdName())
+    s.title = string.format("Day %d - %s", today.day, thirdLabel())
     if today.stage == "turnin" then
         local how = today.turnIn
-        local key = (how ~= "Pile" and how ~= "None") and (" (talk, or " .. cfg.reportKey .. ")") or ""
         s.activity = (NAMES[t and t.kind or "Free"] or "task"):gsub("^%l", string.upper) .. " done - turn it in:"
         if how == "Camp" then
-            s.activity = "The " .. thirdName():lower() .. " is yours to lead."
-            s.where, s.goal = "Camp", "End the " .. thirdName():lower() .. " (" .. cfg.reportKey .. ")"
+            s.activity = "You lead the clan's " .. thirdLabel():lower() .. "."
+            s.where, s.goal = "The meeting place", "Give out the clan's tasks (" .. cfg.reportKey .. ")"
         elseif how == "Pile" then
             s.where, s.goal = "Camp", "Bring your catch to the fresh-kill pile"
         elseif how == "Partner" then
-            s.where, s.goal = "Camp", "Talk to " .. ((t and t.who) or "your partner") .. key
+            s.where, s.goal = "Camp", "Talk to " .. ((t and t.who) or "your partner")
         else
-            s.where, s.goal = "Camp", "Report to the " .. tostring(how):lower() .. key
+            s.where, s.goal = "Camp", "Report to the " .. tostring(how):lower()
         end
     elseif today.stage == "event" then
-        s.where, s.activity = "Camp", "The clan gathers."
+        s.where = "Camp"
+        s.activity = today.third == 3 and "The clan eats and shares tongues." or "The clan gathers."
+    elseif today.stage == "sleeping" then
+        s.where, s.activity = "Your den", "Asleep."
     elseif today.stage == "sleep" or (t and t.kind == "Sleep") then
-        s.activity, s.goal = "Night falls.", "Rest (" .. tostring(cfg.restKey) .. ")"
+        s.where, s.activity, s.goal = "Your den", "Night falls.", "Sleep in your nest"
+        if (cfg.restKey or "") ~= "" then s.goal = s.goal .. " (or " .. cfg.restKey .. ")" end
     elseif t and t.kind == "NightWatch" then
         s.where, s.activity = "The camp's entrance", "Keep watch through the night:"
         s.goal, s.done = "Take your guard post", t.done
@@ -564,7 +635,7 @@ end
 
 local function context()
     local t = today and today.task
-    return { DAY = today and today.day, THIRD = thirdName():lower(), TASK = t and describe(t) or "",
+    return { DAY = today and today.day, THIRD = thirdLabel():lower(), TASK = t and describe(t) or "",
              N = t and (t.need or (t.points and #t.points)) or "", DEPUTY = cfg.deputyName,
              WHO = t and t.who or "", RESTKEY = cfg.restKey }
 end
@@ -619,7 +690,7 @@ local function pickKind(name)
     return options[#options][1]
 end
 
-local taskDone, thirdEnd, startThird
+local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree, waitingToStart
 
 local function cleanup(t)
     if t.ground then removeMarker(t.ground) end
@@ -629,6 +700,9 @@ local function cleanup(t)
     end
     removeArea(t.area)
     if t.guardMarker then removeMarker({ marker = t.guardMarker }) end
+    if t.nestMarker then removeMarker({ marker = t.nestMarker }) end
+    if t.meetMarker then removeMarker({ marker = t.meetMarker }) end
+    if t.denMarker then removeMarker({ marker = t.denMarker }) end
     companionsLeave(t.companions)
     t.companions = nil
 end
@@ -702,6 +776,24 @@ local function setUp(kind)
             log("duties: no one to train with - free time instead")
             t.kind = "Free"
         end
+    elseif kind == "Sleep" then
+        -- your den (yours or your rank's: walk in, and you sleep), else a nest out in the open (use it)
+        t.dens = myDens()
+        local show
+        for _, d in ipairs(t.dens) do if not d.personal then show = d break end end
+        show = show or t.dens[1]
+        if show then
+            t.denMarker = marker(show.door)
+            log("duties: %d den(s) to sleep in - marked: %s", #t.dens, show.title)
+        end
+        local nest, where = findNest()
+        if nest then
+            t.nest = nest
+            if not show then t.nestMarker = marker(nest) end
+            log("duties: a nest to sleep in - %s (%.0f %.0f)", where, nest.X, nest.Y)
+        elseif not show then
+            log("duties: no den or nest found - sleep with the rest key%s", (cfg.restKey or "") == "" and " (none set: timeskip.ini RestKey)" or "")
+        end
     elseif kind == "NightWatch" then
         local spot = guardSpot()
         if spot then
@@ -719,7 +811,7 @@ end
 local function assign()
     local name = thirdName()
     local kind = pickKind(name)
-    if today.lead and today.third <= 3 then kind = "Free" end
+    if today.lead and today.third <= 2 then kind = "Free" end
     if not KINDS[kind] then
         log("duties: unknown task %s for the %s - free time", tostring(kind), name)
         kind = "Free"
@@ -731,8 +823,18 @@ local function assign()
     WaCa.Emit("TaskAssigned", today.day, name, t.kind)
     local steps = {}
     if today.lead and t.kind == "Free" then
+        -- leading = giving out the clan's tasks at its meeting place (operator 2026-10-28; the full management UI is a
+        -- ticket): the leader's spot in camp, else the camp's middle - marked; the report key there ends the third
         t.lead = true
-        append(steps, { { kind = "Card", value = "The " .. name:lower() .. " is yours to lead." } })
+        local leader = Events.Who("Leader")
+        local at = leader and leader:IsValid() and leader:K2_GetActorLocation()
+        if not (at and campInside(at)) then at = Duties.Camp().middle end
+        if at then
+            t.meet = { X = at.X, Y = at.Y, Z = at.Z }
+            t.meetMarker = marker(t.meet)
+        end
+        log("duties: the clan's meeting place: %s", at and string.format("%.0f %.0f", at.X, at.Y) or "none (anywhere in camp)")
+        append(steps, { { kind = "Card", value = "Give out the clan's tasks at the meeting place." } })
     else
         append(steps, cfg.assignScenes[t.kind] or { { kind = "Card", value = "{DEPUTY}: {TASK}." } })
     end
@@ -749,7 +851,8 @@ taskDone = function(t)
     if t.done and t.kind ~= "Free" and t.kind ~= "Hunt" then return end
     local first = not t.done
     t.done = true
-    if t.kind ~= "Hunt" then cleanup(t) end            -- a hunt's ground stays: hunt on as long as you like
+    -- (a hunt's ground stays: hunt on as long as you like; a lead third's meeting place stays until the tasks are out)
+    if t.kind ~= "Hunt" and not t.lead then cleanup(t) end
     if first then
         log("duties: %s - %s done", thirdName(), NAMES[t.kind])
         WaCa.Emit("TaskDone", today.day, thirdName(), t.kind)
@@ -765,15 +868,11 @@ taskDone = function(t)
     end
     today.stage = "turnin"
     today.turnIn = turnIn
-    local after = { Hunt = "Hunting duty done - hunt on if you like, every catch still feeds the clan.",
-                    Patrol = "Patrol done - make your own way back, or explore on.", Train = "Training done.",
-                    Free = "The " .. thirdName():lower() .. " is yours." }
-    if t.lead then return end                          -- (its card was the assignment's)
-    local where = { Pile = "Bring your catch to the fresh-kill pile when you're back.",
-                    Partner = "Talk to " .. (t.who or "them") .. " when you're both back in camp (or " .. cfg.reportKey ..
-                        " next to them)." }
-    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:lower() ..
-        " when you're back (talk, or " .. cfg.reportKey .. " next to them).")))
+    -- (short - operator 2026-10-28: too much text; the day panel carries the details)
+    if t.lead or t.kind == "Free" then return end      -- (its card was the assignment's)
+    local after = { Hunt = "Hunt done.", Patrol = "Patrol done.", Train = "Training done." }
+    local where = { Pile = "Take your catch to the fresh-kill pile.", Partner = "Talk to " .. (t.who or "them") .. "." }
+    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:lower() .. ".")))
 end
 
 -- the turn-in happened: the third ends (Pile: the game's own contribution; Partner / a role: a talk with that cat)
@@ -781,6 +880,7 @@ local function turnedIn(how)
     if not today or today.stage ~= "turnin" or today.turnIn ~= how then return false end
     log("duties: %s turned in (%s)", NAMES[today.task and today.task.kind or "Free"] or "task", how)
     WaCa.Emit("TaskTurnedIn", today.day, thirdName(), today.task and today.task.kind, how)
+    if today.task and today.task.lead then cleanup(today.task) end
     thirdEnd()
     return true
 end
@@ -816,11 +916,18 @@ local function reportKey()
     local how = today and today.stage == "turnin" and today.turnIn
     if not how or how == "Pile" or how == "None" or WaCa.InMenu() then return end
     if how == "Camp" then
-        if not camp.inside then
+        local meet, p = today.task and today.task.meet, playerPos()
+        if meet and p then
+            local d = math.sqrt((meet.X - p.X) ^ 2 + (meet.Y - p.Y) ^ 2)
+            if d > cfg.reportRadius then
+                log("duties: the report key - at the meeting place to give out the tasks (%.0f away)", d)
+                return
+            end
+        elseif not camp.inside then
             log("duties: the report key - back in camp first to end the %s", thirdName():lower())
             return
         end
-        log("duties: your cat ends the %s (the report key in camp)", thirdName():lower())
+        log("duties: your cat gives out the clan's tasks - the %s ends (the report key)", thirdName():lower())
         turnedIn("Camp")
         return
     end
@@ -831,6 +938,53 @@ local function reportKey()
     end
     log("duties: your cat reports to %s (%.0f away, the report key)", pathOf(cat):match("([^.]+)$") or "?", dist)
     turnedIn(how)
+end
+
+-- the night in your nest: a fade, then the night passes (DayEnded: the verdict, DayStarted: the morning fades in)
+sleepNow = function()
+    if not today or today.stage == "sleeping" then return end
+    today.stage = "sleeping"
+    if today.task then today.task.done = true cleanup(today.task) end
+    -- (your cat lies down - the game's own sleep animation - and the screen fades; the morning fades back in)
+    Events.Run({ { kind = "Pose", value = "Sleep", who = "Player" }, { kind = "Wait", value = "2" },
+                 { kind = "Fade", value = "2" }, { kind = "Card", value = "You curl up and sleep." } }, function()
+        if today then today.blackout = true end
+        DayNight.Skip(1)
+    end, context())
+end
+
+-- THE DEPUTY'S WORDS ([Talk] in duties.ini): the game's line for "nothing new" (Key) is swapped while you talk to the
+-- deputy - Report when you have a task to report, Busy while your task is under way; the game's own otherwise
+local talkOriginal
+talkLine = function(npc)
+    if not today then return nil end
+    local role = npc.narrativeRole and roleName(npc.narrativeRole) or ""
+    if not role:find("Deputy$") then return nil end
+    local t = today.task
+    local line
+    if today.stage == "turnin" and today.turnIn == "Deputy" then line = cfg.talk.report
+    elseif today.stage == "task" and t and not t.done and not t.lead then line = cfg.talk.busy end
+    if not line or line == "" then return nil end
+    local ctx = context()
+    ctx.TASKNAME = t and NAMES[t.kind] or ""
+    return (line:gsub("{(%u+)}", function(k) return ctx[k] ~= nil and tostring(ctx[k]) or "{" .. k .. "}" end))
+end
+
+-- (the game's own line is kept as a sticky topic too: a reload of the mod mid-talk lost it and the deputy kept our
+-- words - VM 2026-10-28; Init puts it back)
+setTalk = function(line)
+    local key = cfg.talk.key
+    if line then
+        if not talkOriginal then
+            talkOriginal = WaCa.GetText(key)
+            WaCa.Publish("clanlife.talkOriginal", { key = key, text = talkOriginal }, true)
+        end
+        WaCa.SetText(key, line)
+        log("duties: the deputy says: %s", line)
+    elseif talkOriginal then
+        WaCa.SetText(key, talkOriginal)
+        talkOriginal = nil
+    end
 end
 
 -- the clan's events of a third: every [Event.*] of clanevents.ini whose When is this third, on its days, by chance
@@ -882,7 +1036,7 @@ thirdEnd = function()
         if day.third < 4 then startThird(day.third + 1)
         else
             day.stage = "sleep"
-            card("Night has fallen - rest in your den when you're ready.")
+            statusSoon()
         end
     end, context())
 end
@@ -911,7 +1065,17 @@ startThird = function(i, why)
     append(steps, cfg.thirdScenes[name] and cfg.thirdScenes[name].Start)
     table.insert(steps, hook("ClanThirdStart"))
     local day = today
-    Events.Run(steps, function() if today == day then assign() end end, context())
+    Events.Run(steps, function()
+        if today ~= day then return end
+        if i == 3 then
+            -- the evening is no duty: the clan comes together (its events: eating, sharing tongues), then the night
+            today.stage, today.turnIn = "turnin", nil
+            log("duties: day %d - evening: the clan gathers", today.day)
+            thirdEnd()
+        else
+            assign()
+        end
+    end, context())
 end
 
 -- the day's end (the morning after, or a rest): the tasks done raise standing, missed ones lower it
@@ -932,7 +1096,7 @@ local function verdict()
     local change = done * cfg.standingDone + missed * cfg.standingMissed + bonus
     standing = standing + change
     log("duties: day %d over - %d done, %d missed: standing %+d = %d", today.day, done, missed, change, standing)
-    card(string.format("The day is over: %d of %d done. Your standing in the clan: %d.", done, done + missed, standing))
+    card(string.format("Day %d: %d of %d duties done (standing %d).", today.day, done, done + missed, standing))
     WaCa.Emit("DutiesJudged", today.day, done, missed, standing)
     local blackout = today.blackout
     today = nil
@@ -943,10 +1107,30 @@ local function newDay(n, why)
     -- from MaxRank on your cat hands the duties out: each third is its own to lead (free time, ended with the report
     -- key in camp) - the day still moves on through its thirds, its clan events and its night
     local lead = not rankAllows()
-    if lead then log("duties: your cat leads the clan's day (rank %s or above) - each third is yours", cfg.maxRank) end
+    local rank, from = WaCa.PlayerRank()
+    log("duties: your cat's rank %s (from its %s) - %s", tostring(rank), tostring(from),
+        lead and ("it leads the clan's day (" .. cfg.maxRank .. " or above)") or "the deputy gives it tasks")
     today = { day = n, record = {}, blackout = pendingBlackout, lead = lead }
+    -- (awake: the night's sleep animation ends)
+    pcall(function() pc().Pawn:StopAnimMontage(nil) end)
     pendingBlackout = nil
     startThird(why == "dawn" and 1 or thirdAt(DayNight.Hour() or cfg.hours.Morning), why)
+end
+
+-- the session's first day, once your cat is free (no menu, conversation or cutscene up)
+waitingToStart = false
+startWhenFree = function()
+    if today or not ready then
+        waitingToStart = false
+        return
+    end
+    if WaCa.InMenu() then
+        if not waitingToStart then log("duties: the day starts once the conversation / cutscene is over") end
+        waitingToStart = true
+        return
+    end
+    waitingToStart = false
+    newDay(DayNight.Day() or 1, "the session starts")
 end
 
 -- a fight is over (its end screen / the combat manager's EndCombat, the second within seconds the same one; the end
@@ -991,6 +1175,14 @@ local function where()
     elseif t.kind == "Train" then
         local a = StaticFindObject(t.path)
         if a and a:IsValid() and dist(a:K2_GetActorLocation()) <= cfg.reach then reached(t, "teacher") end
+    elseif t.kind == "Sleep" and t.dens then
+        -- in a den: its door brought your cat to the inside point
+        for _, d in ipairs(t.dens) do
+            if dist(d.dest) <= 700 then
+                log("duties: your cat is in its den (%s) - it goes to sleep", d.title)
+                return sleepNow()
+            end
+        end
     elseif t.kind == "NightWatch" and t.spot then
         -- (night falls with your cat right where it came in - the spot counts once it has stepped away and back)
         local d = dist(t.spot)
@@ -1098,6 +1290,10 @@ function Duties.Init(c)
     local s = ini["Standing"] or {}
     cfg.standingDone = tonumber(s.Done or "") or cfg.standingDone
     cfg.standingMissed = tonumber(s.Missed or "") or cfg.standingMissed
+    local tk2 = ini["Talk"] or {}
+    cfg.talk = { key = (tk2.Key or "") ~= "" and tk2.Key or "STR_DIALOGUE_NOTHING_CONTEXT_1",
+                 report = tk2.Report or "Good work. The clan is better for it - rest a while.",
+                 busy = tk2.Busy or "Shouldn't you be out on your {TASKNAME}? The clan is counting on you." }
     -- the clan's events (clanevents.ini)
     local ev = WaCa.ReadContent(c.modDir .. "/config/clanevents.ini", "clanevents") or {}
     for section, sec in pairs(ev) do
@@ -1111,7 +1307,7 @@ function Duties.Init(c)
     end
     table.sort(cfg.clanEvents, function(a, b) return a.name < b.name end)
     pcall(function() cfg.restKey = (WaCa.ReadIni(c.modDir .. "/config/timeskip.ini") or {}).TimeSkip.RestKey end)
-    cfg.restKey = cfg.restKey or "F9"
+    cfg.restKey = cfg.restKey or ""
     Events.Provide("Standing", function() return standing end)
     log("duties: %s (%d clan events)", cfg.on and "on" or "off", #cfg.clanEvents)
     if not cfg.on then return end
@@ -1130,13 +1326,39 @@ function Duties.Init(c)
         ExecuteInGameThreadWithDelay(30000, function()
             ready = true
             findCamp()
-            if not today then newDay(DayNight.Day() or 1, "the session starts") end
+            startWhenFree()
         end)
+    end)
+    -- (the day waits while a conversation or cutscene is up: a new game opens with the story's intro, and the first
+    -- task's card came in the middle of the leader's speech - VM 2026-10-28)
+    WaCa.On("ScreenHidden", function()
+        if waitingToStart then ExecuteInGameThreadWithDelay(1000, startWhenFree) end
     end)
     -- the turn-ins: the game's own fresh-kill contribution (its achievements manager hears of every one), and a talk
     -- with the deputy (the dialogue screen's NpcRef is the cat talked to)
     WaCa.Watch("OnContributeFreshKill", "/Script/Wrc.WrcAchievementsManager", "WaCaPileContribution", "post")
     WaCa.On("WaCaPileContribution", function() turnedIn("Pile") end)
+    -- sleeping: your cat uses a nest (the game's own sleep spot) at night - the night passes
+    WaCa.Watch("OnInteracted", "/Script/SwtAdventure.SwtAdventureInteractableActor", "WaCaInteracted", "post")
+    WaCa.On("WaCaInteracted", function(actor)
+        if not isNest(actor) then return end
+        local night = today and (today.stage == "sleep" or (today.task and today.task.kind == "Sleep"))
+        log("duties: your cat lies down in a nest%s", night and " - the night passes" or " (not night yet: a nap)")
+        if night then sleepNow() end
+    end)
+    -- (a line left swapped by an earlier run of this mod: the game's own back)
+    local kept = WaCa.Latest("clanlife.talkOriginal")
+    if kept and kept.key and kept.text and WaCa.GetText(kept.key) ~= kept.text then WaCa.SetText(kept.key, kept.text) end
+    -- the deputy's own words (the game has only "nothing new for you" for a cat whose story has nothing to say): while
+    -- a talk with the deputy is open, that line is the clan loop's - your report, or a reminder of your task
+    WaCa.On("ScreenShown", function(screen)
+        local ok, npc = pcall(function() return screen.NpcRef end)
+        if ok and npc and npc:IsValid() then setTalk(talkLine(npc)) end
+    end)
+    WaCa.On("ScreenHidden", function(screen)
+        local ok, npc = pcall(function() return screen.NpcRef end)
+        if ok and npc then setTalk(nil) end
+    end)
     WaCa.On("ScreenShown", function(screen)
         local how = today and today.stage == "turnin" and today.turnIn
         if not how or how == "Pile" or how == "None" then return end

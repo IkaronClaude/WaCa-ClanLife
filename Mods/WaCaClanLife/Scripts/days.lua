@@ -101,8 +101,8 @@ local function advances()
     if a == "Duties" then return lastJudged and lastJudged.missed == 0 and lastJudged.done > 0 end
     local rank = a:match("^Rank:%s*(%a+)$")
     if rank then
-        local p = WaCa.GameProgress()
-        return p and rankValue(rank) and tonumber(p.Rank) and tonumber(p.Rank) >= rankValue(rank) or false
+        local r = WaCa.PlayerRank()
+        return r and rankValue(rank) and r >= rankValue(rank) or false
     end
     return false
 end
