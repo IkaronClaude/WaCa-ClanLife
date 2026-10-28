@@ -351,10 +351,10 @@ function Events.Gather(n, where, ctx, done)
                 local yaw = math.deg(math.atan(place.Y - spot.Y, place.X - spot.X))
                 -- (copied out: the returned structs are live views that don't keep the old values - the release put
                 -- nobody back: VM 2026-10-28)
-                local l, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()
+                local l, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()  -- (FRotator: lower-case pitch in this build)
                 table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")),
-                                             loc = { X = l.X, Y = l.Y, Z = l.Z }, rot = { Pitch = r.Pitch, Yaw = r.Yaw, Roll = r.Roll } })
-                cat:K2_SetActorLocationAndRotation(spot, { Pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                                             loc = { X = l.X, Y = l.Y, Z = l.Z }, rot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll } })
+                cat:K2_SetActorLocationAndRotation(spot, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
                 held[#held + 1] = holdAI(cat, true)
             end)
         end

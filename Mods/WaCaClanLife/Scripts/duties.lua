@@ -5,7 +5,7 @@
 --   hunt at the fresh-kill pile, a patrol by reporting to the deputy, a spar is its own end) -> the clan's event of
 --   that third, if any (clan meetings, ceremonies ...: clanevents.ini, the story's beats: days.ini <Third>) -> the
 --   time moves on a full third -> the next assignment.
---   The evening (operator 2026-10-28: not a third task): the clan gathers - eating together, sharing tongues, staged
+--   The evening (operator 2026-10-28: not a third task): the clan comes together in camp - eating, sharing tongues, staged
 --   with the cats themselves (clanevents.ini When = Evening: Gather / Pose steps), the story's evening beats.
 -- Then the night - sleep in your den's nest (the game's own sleep spot: use it) or the night watch (go to the guard
 -- spot at the camp entrance: a short cutscene shows the night passing), or what the story sets (days.ini NightDuty =
@@ -591,7 +591,7 @@ local function publishStatus()
         end
     elseif today.stage == "event" then
         s.where = "Camp"
-        s.activity = today.third == 3 and "The clan eats and shares tongues." or "The clan gathers."
+        s.activity = today.third == 3 and "The clan eats and shares tongues." or "The clan comes together."
     elseif today.stage == "sleeping" then
         s.where, s.activity = "Your den", "Asleep."
     elseif today.stage == "sleep" or (t and t.kind == "Sleep") then
@@ -1070,7 +1070,7 @@ startThird = function(i, why)
         if i == 3 then
             -- the evening is no duty: the clan comes together (its events: eating, sharing tongues), then the night
             today.stage, today.turnIn = "turnin", nil
-            log("duties: day %d - evening: the clan gathers", today.day)
+            log("duties: day %d - evening: the clan eats and shares tongues", today.day)
             thirdEnd()
         else
             assign()
