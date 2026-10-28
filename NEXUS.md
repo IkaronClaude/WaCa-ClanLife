@@ -35,6 +35,8 @@ a way to tell their own stories in it, without programming.
 - **Night**: sleep, or keep **night watch** at the camp's entrance.
 - **Gatherings**: the leader picks who goes - your standing and the leader's favour count. Not chosen? Someone has to
   guard the camp...
+- **The day at a glance** - a panel in the game's own quest style shows the time of day, your task and how far along
+  you are.
 - **Your standing in the clan** rises with tasks done.
 - **The clan's own patrols** head out to the border together.
 - **Clanmates say new things** - by time of day, and by story day.
@@ -60,8 +62,9 @@ The full guide is in the README on GitHub (TODO: link).
 1. Install UE4SS for Warrior Cats and WaCa Core (see their pages).
 2. Extract this zip into the game's folder (Steam > right-click the game > Manage > Browse local files):
    `Wrc\Binaries\Win64\ue4ss\Mods\WaCaClanLife` and `Wrc\Content\Paks\~mods\WaCaClanLife_P.*` exist afterwards.
-3. Turn on what you'd like to try: `On = 1` in the files in `ue4ss\Mods\WaCaClanLife\config\` - start with
-   `daynight.ini`, then `weather.ini`, then `duties.ini` (the clan's day; it needs day and night).
+3. **Quick start:** open `ue4ss\Mods\WaCaClanLife\config\clanlife.ini` and set `On = 1` - the clan's whole daily
+   life comes on (day and night, seasons and weather, rest, exhaustion, the deputy's tasks, patrols, Gatherings). Or
+   turn parts on one by one with `On = 1` in their own files.
 
 **Updating from the old all-in-one "WaCa ModKit" (0.7 or older):** remove it first (see WaCa Core's page) - including
 `Wrc\Content\Paks\~mods\WaCaModKit_P.*`. Its clan-life settings files are this mod's - copy yours over.

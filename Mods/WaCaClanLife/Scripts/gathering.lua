@@ -56,7 +56,7 @@ function Gathering.Init(c)
     WaCa, log, Events, Days, DayNight = c.WaCa, c.log, c.Events, c.Days, c.DayNight
     local ini = WaCa.ReadContent(c.modDir .. "/config/gatherings.ini", "gatherings") or {}
     local g = ini["Gathering"] or {}
-    cfg.on = (g.On or "0") == "1"
+    cfg.on = c.part("Gatherings", g.On)
     cfg.first = math.floor(tonumber(g.FirstDay or "") or cfg.first)
     cfg.every = math.max(1, math.floor(tonumber(g.Every or "") or cfg.every))
     cfg.third = (g.Third or "") ~= "" and g.Third or cfg.third

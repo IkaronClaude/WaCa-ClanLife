@@ -267,7 +267,7 @@ function Activities.Init(c)
     WaCa, log, modDir, DayNight = c.WaCa, c.log, c.modDir, c.DayNight
     local ini = WaCa.ReadIni(modDir .. "/config/activities.ini") or {}
     local j = ini["Join"] or {}
-    join.on = (j.On or "0") == "1"
+    join.on = c.part("Join", j.On)
     join.key = (j.Key or "") ~= "" and j.Key or join.key
     join.radius = tonumber(j.Radius or "") or join.radius
     join.bond = math.floor(tonumber(j.Bond or "") or join.bond)
@@ -284,7 +284,7 @@ function Activities.Init(c)
         end)
     end
     local amb = ini["Ambient"] or {}
-    cfg.on = (amb.On or "0") == "1"
+    cfg.on = c.part("Ambient", amb.On)
     cfg.every = math.max(2, tonumber(amb.Every or "") or cfg.every)
     cfg.radius = tonumber(amb.Radius or "") or cfg.radius
     cfg.pairRadius = tonumber(amb.PairRadius or "") or cfg.pairRadius

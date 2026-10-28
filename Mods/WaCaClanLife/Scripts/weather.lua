@@ -268,7 +268,7 @@ function Weather.Init(c)
     WaCa, log, modDir, DayNight = c.WaCa, c.log, c.modDir, c.DayNight
     local ini = WaCa.ReadIni(modDir .. "/config/weather.ini") or {}
     local s = ini["Seasons"] or {}
-    cfg.on = (s.On or "0") == "1"
+    cfg.on = c.part("Weather", s.On)
     for name in (s.Order or ""):gmatch("[^,]+") do table.insert(cfg.order, (name:gsub("^%s+", ""):gsub("%s+$", ""))) end
     for i, name in ipairs(cfg.order) do
         if name == (s.StartSeason or "") then cfg.start = i end

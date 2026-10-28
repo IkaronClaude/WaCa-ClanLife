@@ -165,7 +165,7 @@ function Lines.Init(c)
     WaCa, log, DayNight, Days, Events = c.WaCa, c.log, c.DayNight, c.Days, c.Events
     local ini = WaCa.ReadContent(c.modDir .. "/config/lines.ini", "lines") or {}
     local l = ini["Lines"] or {}
-    cfg.on = (l.On or "0") == "1"
+    cfg.on = c.part("Lines", l.On)
     cfg.share = math.max(0, math.min(1, tonumber(l.Share or "") or cfg.share))
     local n = 0
     local names = {}

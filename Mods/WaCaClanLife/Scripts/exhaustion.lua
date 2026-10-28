@@ -66,7 +66,7 @@ function Exhaustion.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
     local ini = WaCa.ReadIni(c.modDir .. "/config/exhaustion.ini") or {}
     local e = ini["Exhaustion"] or {}
-    cfg.on = (e.On or "0") == "1"
+    cfg.on = c.part("Exhaustion", e.On)
     cfg.perPounce = tonumber(e.PerPounce or "") or cfg.perPounce
     cfg.perFight = tonumber(e.PerFight or "") or cfg.perFight
     cfg.late = tonumber(e.LateHour or "") or cfg.late

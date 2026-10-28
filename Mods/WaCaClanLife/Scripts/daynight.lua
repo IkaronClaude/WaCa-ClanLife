@@ -246,7 +246,7 @@ function DayNight.Init(c)
     WaCa, log, modDir = c.WaCa, c.log, c.modDir
     local ini = WaCa.ReadIni(modDir .. "/config/daynight.ini") or {}
     local d = ini["DayNight"] or {}
-    cfg.on = (d.On or "0") == "1"
+    cfg.on = c.part("DayNight", d.On)
     cfg.dayMinutes = math.max(1, tonumber(d.DayMinutes or "") or cfg.dayMinutes)
     cfg.startHour = tonumber(d.StartHour or "") or cfg.startHour
     cfg.sunHeight = tonumber(d.SunHeight or "") or cfg.sunHeight

@@ -63,7 +63,7 @@ function TimeSkip.Init(c)
     WaCa, log, DayNight, Weather = c.WaCa, c.log, c.DayNight, c.Weather
     local ini = WaCa.ReadIni(c.modDir .. "/config/timeskip.ini") or {}
     local t = ini["TimeSkip"] or {}
-    cfg.on = (t.On or "0") == "1"
+    cfg.on = c.part("TimeSkip", t.On)
     cfg.key = (t.RestKey or "") ~= "" and t.RestKey or nil
     cfg.days = math.max(1, math.floor(tonumber(t.RestDays or "") or 1))
     cfg.hour = tonumber(t.WakeHour or "")

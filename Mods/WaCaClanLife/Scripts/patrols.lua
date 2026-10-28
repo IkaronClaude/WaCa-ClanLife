@@ -60,7 +60,7 @@ function Patrols.Init(c)
     WaCa, log, Duties, Follow, Lines = c.WaCa, c.log, c.Duties, c.Follow, c.Lines
     local ini = WaCa.ReadContent(c.modDir .. "/config/patrols.ini", "patrols") or {}
     local p = ini["Patrols"] or {}
-    cfg.on = (p.On or "0") == "1"
+    cfg.on = c.part("Patrols", p.On)
     cfg.chance = tonumber(p.Chance or "") or cfg.chance
     cfg.size = math.max(1, math.floor(tonumber(p.Size or "") or cfg.size))
     cfg.points = math.max(1, math.floor(tonumber(p.Points or "") or cfg.points))

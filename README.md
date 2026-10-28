@@ -3,8 +3,10 @@
 Living in the clan, in **Warrior Cats: Clans of the Forest** - time that passes, seasons and weather, the clan's
 daily life - and a story system made for writers: new stories, scenes and dialogue as plain text files.
 
-**Experimental.** Every part is off by default and turned on in its own file in `config\` - try them one by one and
-tell us how it plays.
+**Experimental.** Every part is off by default. **Quick start:** `config\clanlife.ini` `On = 1` turns the clan's life
+on in one go (day / night, seasons and weather, rest, exhaustion, the clan loop, patrols, Gatherings - its `Parts`
+list); each part's settings stay in its own file, and parts can also be turned on one by one there. Tell us how it
+plays.
 
 ## Time and the world
 - **Day / night** (`daynight.ini`): the sun crosses the sky, the light dims at night and the game's own night look
@@ -29,6 +31,13 @@ tell us how it plays.
   third, if any: a clan meeting, the Gathering, eating together and **sharing tongues** in the evening. After the
   evening: sleep, or the **night watch** at the camp's entrance (a short scene shows the night passing). Tasks done
   raise your standing in the clan; missed ones lower it.
+- **The day at a glance**: while the loop runs, a panel like the game's own quest objective (left side of the HUD)
+  shows the day and third, your task, where to go and how far along you are ("Prey 1/3"), then how to turn it in
+  (`clanlife.ini [Hud]`).
+- **Deputies and leaders lead their own day** (from `duties.ini MaxRank` on): each third is yours - the report key in
+  camp ends it, and the clan's events and the night follow as usual.
+- **Turn-ins never get stuck**: reporting to the deputy (or your mentor) is a conversation with them - or the report
+  key (`F`, `duties.ini ReportKey`) next to them, for when the game has nothing for them to say.
 - **Each clan's camp** is found from the game's own camp zone (`R-05`, `T-10` ...) - the loop knows when you're home.
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
@@ -70,7 +79,9 @@ story beats (100), clan events (200 - `Order =`), `<Third>After` beats (300), th
 
 ## For modders (Lua)
 Inside this mod (`Scripts\`): `events.lua` (the scene runner, story variables, roles), `duties.lua` (the loop),
-`follow.lua` (cats moving together: `Follow.Group`, `Follow.Travel`, holding back while the leader sneaks). From any
+`follow.lua` (cats moving together: `Follow.Group`, `Follow.Travel`, holding back while the leader sneaks). The day at a glance is the sticky topic `clan.status` (`WaCa.Subscribe("clan.status", fn)`: day,
+third, task, where, activity, goal, got / need, done, text) - draw it your own way (a day-clock dial ...) and set
+`clanlife.ini [Hud] On = 0`. From any
 other mod, use the events - WaCa Core carries them between mods: `DayStarted`, `HourChanged`, `SeasonChanged`,
 `ClanThird`, `TaskAssigned`, `TaskTurnedIn`, `DutiesJudged`, `GatheringHeld`, `StoryVar` ... (all in WaCa Core's
 [EVENTS.md](https://github.com/IkaronClaude/WaCa-Core/blob/main/docs/EVENTS.md)), and a scene's `Emit: <event>` step

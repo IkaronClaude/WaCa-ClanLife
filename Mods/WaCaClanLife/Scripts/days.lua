@@ -118,7 +118,7 @@ function Days.Init(c)
     Weather, Duties, Events = c.Weather, c.Duties, c.Events
     local ini = WaCa.ReadContent(c.modDir .. "/config/days.ini", "days") or {}
     local d = ini["Days"] or {}
-    cfg.on = (d.On or "0") == "1"
+    cfg.on = c.part("Days", d.On)
     for name in pairs(cfg.phases) do cfg.phases[name] = tonumber(d[name .. "Hour"] or "") or cfg.phases[name] end
     local n = 0
     for section, sec in pairs(ini) do

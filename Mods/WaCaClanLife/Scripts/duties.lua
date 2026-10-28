@@ -41,6 +41,7 @@ local cfg = { on = false, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow 
                           Evening = { Patrol = 2, Hunt = 1, Free = 1 }, Night = { Sleep = 3, NightWatch = 1 } },
               turnIn = { Hunt = "Pile", Patrol = "Deputy", Free = "Deputy", Train = "Partner" },
               pileFactor = 3, campRadius = 3500, campMax = 6000, watchStanding = 1, stepEvery = 1,
+              reportKey = "F", reportRadius = 500,
               thirdScenes = {}, assignScenes = {}, watchScene = {}, clanEvents = {} }
 local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
 local HINT = "/Game/Gameplay/Blueprints/WorldElements/POIHintArea/BP_POI_HintArea_Quest.BP_POI_HintArea_Quest_C"
@@ -495,6 +496,72 @@ local function describe(t)
     return NAMES[t.kind] or t.kind
 end
 
+-- THE DAY AT A GLANCE (WaCa topic "clan.status", sticky - hud.lua shows it as an objective panel like the game's own,
+-- any mod can show it its own way). { v = 1, day, third, stage, task (kind), turnIn,
+--   title ("Day 18 - Morning"), where (where to go, or nil), activity ("Hunt for the clan:"),
+--   goal ("Prey"), got, need (nil when the goal has no count), done (the goal is met), text (all of it on one line) }.
+-- Published whenever the day moves on or the task makes progress.
+local lastStatus
+local function publishStatus()
+    if not today then return end
+    local t = today.task
+    local s = { v = 1, day = today.day, third = thirdName(), stage = today.stage, task = t and t.kind,
+                turnIn = today.stage == "turnin" and today.turnIn or nil }
+    s.title = string.format("Day %d - %s", today.day, thirdName())
+    if today.stage == "turnin" then
+        local how = today.turnIn
+        local key = (how ~= "Pile" and how ~= "None") and (" (talk, or " .. cfg.reportKey .. ")") or ""
+        s.activity = (NAMES[t and t.kind or "Free"] or "task"):gsub("^%l", string.upper) .. " done - turn it in:"
+        if how == "Camp" then
+            s.activity = "The " .. thirdName():lower() .. " is yours to lead."
+            s.where, s.goal = "Camp", "End the " .. thirdName():lower() .. " (" .. cfg.reportKey .. ")"
+        elseif how == "Pile" then
+            s.where, s.goal = "Camp", "Bring your catch to the fresh-kill pile"
+        elseif how == "Partner" then
+            s.where, s.goal = "Camp", "Talk to " .. ((t and t.who) or "your partner") .. key
+        else
+            s.where, s.goal = "Camp", "Report to the " .. tostring(how):lower() .. key
+        end
+    elseif today.stage == "event" then
+        s.where, s.activity = "Camp", "The clan gathers."
+    elseif today.stage == "sleep" or (t and t.kind == "Sleep") then
+        s.activity, s.goal = "Night falls.", "Rest (" .. tostring(cfg.restKey) .. ")"
+    elseif t and t.kind == "NightWatch" then
+        s.where, s.activity = "The camp's entrance", "Keep watch through the night:"
+        s.goal, s.done = "Take your guard post", t.done
+    elseif t and t.kind == "Hunt" then
+        s.where, s.activity, s.goal, s.got, s.need = "The hunting grounds", "Hunt for the clan:", "Prey", t.got, t.need
+        s.done = t.got >= t.need
+    elseif t and t.kind == "Patrol" and t.points then
+        s.where, s.activity, s.goal, s.got, s.need = "The border", "Patrol the border:", "Border points", 0, #t.points
+        for _, pt in ipairs(t.points) do if pt.done then s.got = s.got + 1 end end
+        s.done = s.got >= s.need
+    elseif t and t.kind == "Train" then
+        s.where, s.activity, s.goal, s.done = "The training ground", "Train:", "Spar with " .. (t.who or "your mentor"), t.done
+    elseif t and t.kind == "Free" then
+        s.activity = "Free time - the forest is yours."
+    else
+        s.where, s.activity = "Camp", "The deputy gives out the tasks."
+    end
+    s.text = s.title .. ": " .. s.activity .. (s.goal and (" " .. s.goal) or "") ..
+        (s.need and string.format(" %d/%d", s.got, s.need) or "") .. (s.done and " - done" or "")
+    if s.text == lastStatus then return end
+    lastStatus = s.text
+    WaCa.Publish("clan.status", s, true)
+end
+
+-- the status once the current chain of the loop has run (an event can come before the stage it leads to is set)
+local statusDue = false
+local function statusSoon()
+    if statusDue then return end
+    statusDue = true
+    ExecuteInGameThread(function()
+        statusDue = false
+        local ok, err = pcall(publishStatus)
+        if not ok then log("duties: status failed (%s)", tostring(err)) end
+    end)
+end
+
 local function context()
     local t = today and today.task
     return { DAY = today and today.day, THIRD = thirdName():lower(), TASK = t and describe(t) or "",
@@ -579,6 +646,7 @@ local function reached(t, what, i)
         local all = true
         for _, q in ipairs(t.points) do if not q.done then all = false end end
         if all then taskDone(t) else card(string.format("Border point checked - %s.", describe(t))) end
+        statusSoon()
     elseif what == "teacher" then
         if t.fighting or WaCa.InMenu() then return end
         if startSpar(t) then
@@ -651,6 +719,7 @@ end
 local function assign()
     local name = thirdName()
     local kind = pickKind(name)
+    if today.lead and today.third <= 3 then kind = "Free" end
     if not KINDS[kind] then
         log("duties: unknown task %s for the %s - free time", tostring(kind), name)
         kind = "Free"
@@ -658,14 +727,20 @@ local function assign()
     local t = setUp(kind)
     today.task, today.stage = t, "task"
     table.insert(today.record, t)
-    log("duties: day %d, %s - the deputy: %s", today.day, name, describe(t))
+    log("duties: day %d, %s - %s: %s", today.day, name, today.lead and "your own" or "the deputy", describe(t))
     WaCa.Emit("TaskAssigned", today.day, name, t.kind)
     local steps = {}
-    append(steps, cfg.assignScenes[t.kind] or { { kind = "Card", value = "{DEPUTY}: {TASK}." } })
+    if today.lead and t.kind == "Free" then
+        t.lead = true
+        append(steps, { { kind = "Card", value = "The " .. name:lower() .. " is yours to lead." } })
+    else
+        append(steps, cfg.assignScenes[t.kind] or { { kind = "Card", value = "{DEPUTY}: {TASK}." } })
+    end
     table.insert(steps, hook("ClanAssign"))
     Events.Run(steps, function()
         if t.kind == "Free" then taskDone(t) end
         if t.kind == "Sleep" then today.stage = "sleep" end
+        statusSoon()
     end, context())
 end
 
@@ -683,7 +758,7 @@ taskDone = function(t)
     -- the task's END POINT (operator 2026-10-28: not just walking into camp): its turn-in ([Task.<Kind>] TurnIn) -
     -- Pile = the catch onto the fresh-kill pile, Partner = talk to the cat the task was with (training: the mentor),
     -- a role (Deputy, Leader, MedicineCat ...) = report to that cat, None = done is the end
-    local turnIn = cfg.turnIn[t.kind] or "None"
+    local turnIn = (t.lead and "Camp") or cfg.turnIn[t.kind] or "None"
     if turnIn == "None" then
         today.stage = "turnin"
         return thirdEnd()
@@ -693,9 +768,12 @@ taskDone = function(t)
     local after = { Hunt = "Hunting duty done - hunt on if you like, every catch still feeds the clan.",
                     Patrol = "Patrol done - make your own way back, or explore on.", Train = "Training done.",
                     Free = "The " .. thirdName():lower() .. " is yours." }
+    if t.lead then return end                          -- (its card was the assignment's)
     local where = { Pile = "Bring your catch to the fresh-kill pile when you're back.",
-                    Partner = "Talk to " .. (t.who or "them") .. " when you're both back in camp." }
-    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:lower() .. " when you're back.")))
+                    Partner = "Talk to " .. (t.who or "them") .. " when you're both back in camp (or " .. cfg.reportKey ..
+                        " next to them)." }
+    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:lower() ..
+        " when you're back (talk, or " .. cfg.reportKey .. " next to them).")))
 end
 
 -- the turn-in happened: the third ends (Pile: the game's own contribution; Partner / a role: a talk with that cat)
@@ -705,6 +783,54 @@ local function turnedIn(how)
     WaCa.Emit("TaskTurnedIn", today.day, thirdName(), today.task and today.task.kind, how)
     thirdEnd()
     return true
+end
+
+-- REPORTING WITHOUT A CONVERSATION ([Duties] ReportKey, default F): a talk turn-in (Deputy / Partner / a role) also
+-- happens with the report key next to that cat - the game doesn't offer every cat a conversation at every moment (a
+-- deputy whose story line is used up has nothing to say), and a turn-in that can't be done would stall the clan's day.
+-- The cat to report to: the task's partner (by its path), else the nearest story cat whose role ends with the turn-in
+-- (Deputy matches ThunderClanDeputy ...), within ReportRadius.
+local function reportTarget(how)
+    local pawn = pc() and pc().Pawn
+    if not (pawn and pawn:IsValid()) then return nil end
+    local at, best, bd = pawn:K2_GetActorLocation(), nil, nil
+    for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
+        pcall(function()
+            if not a:IsValid() or a.bHidden then return end
+            local fits
+            if how == "Partner" then
+                fits = today.task and today.task.path and pathOf(a) == today.task.path
+            else
+                fits = a.narrativeRole and a.narrativeRole > 0 and roleName(a.narrativeRole):find(how .. "$") ~= nil
+            end
+            if not fits then return end
+            local p = a:K2_GetActorLocation()
+            local d = math.sqrt((p.X - at.X) ^ 2 + (p.Y - at.Y) ^ 2)
+            if d <= cfg.reportRadius and (not bd or d < bd) then best, bd = a, d end
+        end)
+    end
+    return best, bd
+end
+
+local function reportKey()
+    local how = today and today.stage == "turnin" and today.turnIn
+    if not how or how == "Pile" or how == "None" or WaCa.InMenu() then return end
+    if how == "Camp" then
+        if not camp.inside then
+            log("duties: the report key - back in camp first to end the %s", thirdName():lower())
+            return
+        end
+        log("duties: your cat ends the %s (the report key in camp)", thirdName():lower())
+        turnedIn("Camp")
+        return
+    end
+    local cat, dist = reportTarget(how)
+    if not cat then
+        log("duties: the report key - no %s within %d to report to", how == "Partner" and "partner" or how, cfg.reportRadius)
+        return
+    end
+    log("duties: your cat reports to %s (%.0f away, the report key)", pathOf(cat):match("([^.]+)$") or "?", dist)
+    turnedIn(how)
 end
 
 -- the clan's events of a third: every [Event.*] of clanevents.ini whose When is this third, on its days, by chance
@@ -814,12 +940,11 @@ local function verdict()
 end
 
 local function newDay(n, why)
-    if not rankAllows() then
-        today = nil
-        log("duties: your cat hands out the duties now (rank %s or above) - none for you", cfg.maxRank)
-        return
-    end
-    today = { day = n, record = {}, blackout = pendingBlackout }
+    -- from MaxRank on your cat hands the duties out: each third is its own to lead (free time, ended with the report
+    -- key in camp) - the day still moves on through its thirds, its clan events and its night
+    local lead = not rankAllows()
+    if lead then log("duties: your cat leads the clan's day (rank %s or above) - each third is yours", cfg.maxRank) end
+    today = { day = n, record = {}, blackout = pendingBlackout, lead = lead }
     pendingBlackout = nil
     startThird(why == "dawn" and 1 or thirdAt(DayNight.Hour() or cfg.hours.Morning), why)
 end
@@ -922,11 +1047,13 @@ function Duties.Init(c)
     Events, Days = c.Events or require("events"), c.Days
     local ini = WaCa.ReadContent(c.modDir .. "/config/duties.ini", "duties") or {}
     local d = ini["Duties"] or {}
-    cfg.on = (d.On or "0") == "1"
+    cfg.on = c.part("Duties", d.On)
     cfg.maxRank = (d.MaxRank or "") ~= "" and d.MaxRank or cfg.maxRank
     cfg.deputyName = (d.DeputyName or "") ~= "" and d.DeputyName or "The deputy"
     cfg.campRadius = tonumber(d.CampRadius or "") or cfg.campRadius
     cfg.campMax = tonumber(d.CampMax or "") or cfg.campMax
+    cfg.reportKey = (d.ReportKey or "") ~= "" and d.ReportKey or cfg.reportKey
+    cfg.reportRadius = tonumber(d.ReportRadius or "") or cfg.reportRadius
     local th = ini["Thirds"] or {}
     for _, name in ipairs({ "Morning", "Noon", "Evening", "Night" }) do
         cfg.hours[name] = tonumber(th[name] or "") or cfg.hours[name]
@@ -1023,6 +1150,11 @@ function Duties.Init(c)
             if role:find(how .. "$") then turnedIn(how) end
         end
     end)
+    WaCa.On("KeyDown", function(_, name)
+        if tostring(name) ~= cfg.reportKey then return end
+        local ok, err = pcall(reportKey)
+        if not ok then log("duties: the report key failed (%s)", tostring(err)) end
+    end)
     WaCa.Watch("EndCombat", "/Script/SwtAdventure.SwtAdventureCombatManager", "WaCaFightEnd", "post")
     WaCa.On("WaCaFightEnd", function() fightOver() end)
     WaCa.On("AreaOverlap", function(_, area, other, entering)
@@ -1034,6 +1166,11 @@ function Duties.Init(c)
     end)
     WaCa.On("DayEnded", function() pendingBlackout = verdict() end)
     WaCa.On("DayStarted", function(n) if ready then newDay(n, "dawn") end end)
+    -- the day at a glance (clan.status) after every step of the loop and every bit of progress
+    for _, e in ipairs({ "ClanThird", "ClanNight", "TaskAssigned", "TaskDone", "TaskTurnedIn", "ClanThirdEnded",
+                         "DutiesJudged", "HuntCaught", "CampEntered", "CampLeft" }) do
+        WaCa.On(e, statusSoon)
+    end
     WaCa.Watch("BlendProgress", "/Script/SwtAdventure.SwtAdventureExplorationSenseComponent", "WaCaDutySense", "post")
     WaCa.On("WaCaDutySense", function() where() end)
     -- the game's zones: the cat walked into a zone (its trigger's own overlap, with the actor that entered)
