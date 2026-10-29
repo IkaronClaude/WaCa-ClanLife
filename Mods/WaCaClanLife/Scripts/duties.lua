@@ -1096,7 +1096,11 @@ local function verdict()
     local change = done * cfg.standingDone + missed * cfg.standingMissed + bonus
     standing = standing + change
     log("duties: day %d over - %d done, %d missed: standing %+d = %d", today.day, done, missed, change, standing)
-    card(string.format("Day %d: %d of %d duties done (standing %d).", today.day, done, done + missed, standing))
+    -- (no card for a day with nothing to judge - a session that starts at night showed "0 of 0 duties done": VM
+    -- 2026-10-28)
+    if done + missed > 0 then
+        card(string.format("Day %d: %d of %d duties done (standing %d).", today.day, done, done + missed, standing))
+    end
     WaCa.Emit("DutiesJudged", today.day, done, missed, standing)
     local blackout = today.blackout
     today = nil
