@@ -56,7 +56,8 @@ plays.
   leader, deputy, queens, kits, story cats) only step over to a nearby spot and back. Talking to a cat stops it (the
   others hold too); nobody moves while a menu or scene is up. In the evening's groups the named cats walk to their
   seats and home again. Story lever: `Walk:<Name>` = 1 moves next, -1 never.
-  For other mods: the `WalkerMoves` event (name, actor path, `home`/`away`) when a cat sets off, and `PlayScene`
+  For other mods: the `WalkerMoves` event (name, actor path, `home`/`away`) when a cat sets off, `WalkerWalkTo`
+  (actor path, X, Y, Z: that cat walks there, stays a while, walks home), and `PlayScene`
   (step lines as in `clanevents.ini`, joined by `|`, e.g. `Groups: Prey|Wait: 3|Release`) to play a scene now.
 - **The clan's own patrols** (`patrols.ini`): clanmates gather in camp and head out to the border together.
 - **New things to say** (`lines.ini`): lines per cat role and time of day, and **dialogue by story day** - a queen says

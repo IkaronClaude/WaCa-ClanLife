@@ -592,6 +592,20 @@ function Walkers.Init(c)
     WaCa.On("DialogueStarted", function() if not talkingSince then pcall(talkBegins) end end)
     WaCa.On("SequenceEnded", function() talkEnds("its sequence ended") end)
     WaCa.On("SequenceFinished", function() talkEnds("its sequence finished") end)
+    -- (other mods: send a named cat somewhere now - it walks there, stays a while and walks home: actor path, X, Y, Z)
+    WaCa.On("WalkerWalkTo", function(path, x, y, z)
+        ExecuteInGameThread(function()
+            local a = StaticFindObject(tostring(path))
+            if not (a and a:IsValid()) then log("walkers: walk-to - no cat at %s", tostring(path)) return end
+            local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+            local old = movers[pathOf(a)]
+            local home = old and old.home or { X = q.X, Y = q.Y, Z = q.Z }
+            movers[pathOf(a)] = { home = home, homeRot = old and old.homeRot or { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll },
+                                  legs = { { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) }, home }, leg = 1,
+                                  state = "wait", wait = 0, kind = "asked", name = nameOf(a) or "?" }
+            log("walkers: %s is sent to %.0f %.0f", movers[pathOf(a)].name, tonumber(x), tonumber(y))
+        end)
+    end)
     -- (a turn now - other mods, the test harness)
     WaCa.On("WaCaWalkersTurn", function()
         ExecuteInGameThread(function() pcall(Walkers.Turn, "asked") end)
