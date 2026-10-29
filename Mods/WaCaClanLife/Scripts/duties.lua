@@ -47,6 +47,7 @@ local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Depu
               reportKey = "F", reportRadius = 500,
               thirdScenes = {}, assignScenes = {}, watchScene = {}, clanEvents = {} }
 local HINT = "/Game/Gameplay/Blueprints/WorldElements/POIHintArea/BP_POI_HintArea_Quest.BP_POI_HintArea_Quest_C"
+local lastPatrol, lastHunt = {}, nil   -- the last patrol's places / hunt spot (no repeat while there are others)
 local plan                        -- day scripts' override: { hunt = n, patrol = n, kinds = { Morning = "Hunt", ... } }
 local today                       -- { day, third = 1..3 / 4 = night, stage, task, record = { { third, kind, done } } }
 local standing = 0
@@ -156,8 +157,17 @@ local function patrolPoints(n)
     end
     local out = {}
     local class = WaCa.LoadAsset(HINT)
+    -- (not the places of the last patrol again while there are others - operator 2026-10-29: "avoid repeats")
+    local fresh = {}
+    for _, g in ipairs(candidates) do
+        local key = g:GetFName():ToString()
+        if not lastPatrol[key] then fresh[#fresh + 1] = g end
+    end
+    if #fresh >= n then candidates = fresh end
+    lastPatrol = {}
     for _ = 1, math.min(n, #candidates) do
         local g = table.remove(candidates, math.random(#candidates))
+        lastPatrol[g:GetFName():ToString()] = true
         local ok = pcall(function()
             local area = g.AreaComponent
             local c, e = area:K2_GetComponentLocation(), area:GetScaledBoxExtent()
@@ -200,7 +210,14 @@ local function huntingGround()
         end)
     end
     if #found == 0 then return nil end
+    -- (not the spot of the last hunt again, while there are others)
+    local fresh = {}
+    for _, f in ipairs(found) do
+        if not (lastHunt and math.abs(f[1].X - lastHunt.X) < 1 and math.abs(f[1].Y - lastHunt.Y) < 1) then fresh[#fresh + 1] = f end
+    end
+    if #fresh > 0 then found = fresh end
     local pick = found[math.random(#found)]
+    lastHunt = { X = pick[1].X, Y = pick[1].Y }
     local point = { X = pick[1].X, Y = pick[1].Y, Z = pick[1].Z, kind = pick[2] }
     pcall(function()
         local marker = p:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 })
@@ -1029,14 +1046,34 @@ setTalk = function(line)
 end
 
 -- the clan's events of a third: every [Event.*] of clanevents.ini whose When is this third, on its days, by chance
+-- (the story's lever on an event's Chance: the story variable Event:<Name> - 1 it happens (its third, its
+-- conditions), -1 it doesn't; and a story day's Events = A, B / NoEvents = A, B in days.ini. Operator 2026-10-29:
+-- "some randomness is fine but we need a control lever / override")
+local function eventLever(e)
+    if plan and plan.noEvents and plan.noEvents[e.name] then return -1, "the story day says no" end
+    if plan and plan.events and plan.events[e.name] then return 1, "the story day's" end
+    local ok, v = pcall(function() return tonumber(Events.Var("Event:" .. e.name)) end)
+    v = ok and v or 0
+    if v >= 1 then return 1, "Event:" .. e.name .. " = 1" end
+    if v <= -1 then return -1, "Event:" .. e.name .. " = -1" end
+    return 0
+end
+
 local function pickEvents(name, day)
     local out = {}
     for _, e in ipairs(cfg.clanEvents) do
         local dayOk = (not e.day or day >= e.day) and (not e.every or (day - (e.day or 1)) % e.every == 0)
             and (not e.only or day == e.only)
-        if e.when == name and dayOk and not (e.once and eventsDone[e.name]) and Events.Check(e.require)
-            and math.random() * 100 < e.chance then
-            table.insert(out, e)
+        if e.when == name and dayOk and not (e.once and eventsDone[e.name]) and Events.Check(e.require) then
+            local lever, why = eventLever(e)
+            if lever >= 1 then
+                log("duties: the %s's event %s - %s", name:lower(), e.name, why)
+                table.insert(out, e)
+            elseif lever <= -1 then
+                log("duties: the %s's event %s held back - %s", name:lower(), e.name, why)
+            elseif math.random() * 100 < e.chance then
+                table.insert(out, e)
+            end
         end
     end
     return out
@@ -1258,17 +1295,47 @@ local function dutiesSelfTest()
         last = k
     end
     plan, picked, cfg.weights.Night = savedPlan, savedPicked, savedWeights
-    log("duties: self-test - the story day's chances win: %s; equal chances, back-to-back repeats %d of 39 (by pure chance ~13): %s",
-        storyWins and "PASS" or "FAIL", repeats, repeats <= 8 and "PASS" or "FAIL")
+    -- the clan events' lever: Event:<Name> = 1 always, -1 never (whatever its Chance)
+    local forced, blocked = true, true
+    local any
+    for _, e in ipairs(cfg.clanEvents) do any = any or e end
+    if any then
+        local savedChance = any.chance
+        any.chance = 0
+        Events.SetVar("Event:" .. any.name, 1)
+        for _ = 1, 10 do
+            local hit = false
+            for _, e in ipairs(pickEvents(any.when, 1000)) do if e == any then hit = true end end
+            if not hit then forced = false end
+        end
+        any.chance = 100
+        Events.SetVar("Event:" .. any.name, -1)
+        for _ = 1, 10 do
+            for _, e in ipairs(pickEvents(any.when, 1000)) do if e == any then blocked = false end end
+        end
+        Events.SetVar("Event:" .. any.name, 0)
+        any.chance = savedChance
+    end
+    log("duties: self-test - the story day's chances win: %s; equal chances, back-to-back repeats %d of 39 (by pure chance ~13): %s; Event:%s = 1 plays at 0%%: %s, = -1 never at 100%%: %s",
+        storyWins and "PASS" or "FAIL", repeats, repeats <= 8 and "PASS" or "FAIL", any and any.name or "?",
+        forced and "PASS" or "FAIL", blocked and "PASS" or "FAIL")
 end
 
-function Duties.Plan(hunt, patrol, kinds, chances)
+function Duties.Plan(hunt, patrol, kinds, chances, events, noEvents)
     local w
     for slot, text in pairs(chances or {}) do
         local parsed = weights(text)
         if next(parsed) then w = w or {} w[slot] = parsed end
     end
-    plan = (hunt or patrol or (kinds and next(kinds)) or w) and { hunt = hunt, patrol = patrol, kinds = kinds, weights = w } or nil
+    local function set(text)
+        if not text or text == "" then return nil end
+        local t = {}
+        for n in text:gmatch("[^,%s]+") do t[n] = true end
+        return next(t) and t or nil
+    end
+    local ev, nev = set(events), set(noEvents)
+    plan = (hunt or patrol or (kinds and next(kinds)) or w or ev or nev)
+        and { hunt = hunt, patrol = patrol, kinds = kinds, weights = w, events = ev, noEvents = nev } or nil
 end
 function Duties.Today() return today end
 -- for other modules (patrols.lua ...): the camp - { middle = {X,Y,Z}, inside = bool, code = the game's zone } - and N

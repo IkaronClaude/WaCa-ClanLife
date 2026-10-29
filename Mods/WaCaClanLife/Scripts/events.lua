@@ -1426,6 +1426,10 @@ function Events.Init(c)
         if namesFor == WaCa.CurrentSlot() then return end
         ExecuteInGameThreadWithDelay(20000, function() pcall(keepCampNames) end)
     end)
+    -- (other mods - a story mod - set the clan's story variables: WaCa.Emit("SetStoryVar", name, value))
+    WaCa.On("SetStoryVar", function(name, value)
+        if name then Events.SetVar(tostring(name), value) end
+    end)
     WaCa.On("WaCaGroupsSelfTest", function()
         local ok, err = pcall(groupsSelfTest)
         if not ok then log("events: groups self-test failed to run: %s", tostring(err)) end

@@ -74,7 +74,14 @@ function Patrols.Init(c)
     log("patrols: %s (%d%% a third, %d cats, %d points)", cfg.on and "on" or "off", cfg.chance, cfg.size, cfg.points)
     if not cfg.on then return end
     WaCa.On("ClanThird", function(_, third)
-        if not cfg.thirds[third] or next(out) or math.random() * 100 >= cfg.chance then return end
+        if not cfg.thirds[third] or next(out) then return end
+        -- (the story's lever on the chance: ClanPatrol = 1 - a patrol leaves this third, -1 - none; operator
+        -- 2026-10-29 "we need a control lever / override")
+        local lever = 0
+        pcall(function() lever = tonumber(require("events").Var("ClanPatrol")) or 0 end)
+        if lever <= -1 then log("patrols: none this %s - ClanPatrol = %s", third:lower(), tostring(lever)) return end
+        if lever < 1 and math.random() * 100 >= cfg.chance then return end
+        if lever >= 1 then log("patrols: one leaves this %s - ClanPatrol = %s", third:lower(), tostring(lever)) end
         local camp = Duties.Camp()
         if not (camp and camp.middle) then
             log("patrols: no camp known yet - no patrol this %s", third:lower())

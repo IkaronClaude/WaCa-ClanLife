@@ -83,7 +83,7 @@ local function setUp(why)
             chances[slot] = c
         end
     end
-    if Duties then Duties.Plan(hunt, patrol, kinds, chances) end
+    if Duties then Duties.Plan(hunt, patrol, kinds, chances, get(story, "Events"), get(story, "NoEvents")) end
     if Weather then Weather.SetDay(get(story, "Season"), get(story, "Weather")) end
     log("days: story day %d (%s) - duties hunt %s / patrol %s, season %s, weather %s, advance on %s", story, why,
         tostring(hunt or "by needs"), tostring(patrol or "by needs"), tostring(get(story, "Season") or "by days"),
