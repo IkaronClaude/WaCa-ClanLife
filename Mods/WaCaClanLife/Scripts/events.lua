@@ -697,6 +697,9 @@ function Events.Groups(kind, where, ctx, done)
             pcall(function() w.cat.Controller:StopMovement() end)
             -- (the camp cats amble at 50 - a pace that took ~6 s for 3 m: they walk over at WalkSpeed, then back to
             -- their own - VM 2026-10-29)
+            -- (they pass through each other - and your cat - on the way in: half of them stalled at 90-170 short of
+            -- their seats, pushing against the circle's other cats: VM 2026-10-29; blocking again once seated)
+            pcall(function() w.cat.CapsuleComponent:SetCollisionResponseToChannel(2, 0) end)   -- (Pawn: Ignore)
             pcall(function()
                 local m = w.cat.CharacterMovement
                 m:SetMovementMode(1, 0)            -- (walking: a cat left held by an interrupted scene couldn't move)
@@ -708,6 +711,7 @@ function Events.Groups(kind, where, ctx, done)
         local waited, lastReport = 0, 0
         local function seat(w, snapped)
             w.seated = true
+            pcall(function() w.cat.CapsuleComponent:SetCollisionResponseToChannel(2, 2) end)   -- (Pawn: Block)
             pcall(function() if w.speed then w.cat.CharacterMovement.MaxWalkSpeed = w.speed end end)
             pcall(function()
                 if snapped then
