@@ -28,7 +28,8 @@ plays.
   your cat a task: hunt (the catch goes onto the fresh-kill pile), patrol the border (clanmates walk with you, report
   to the deputy), training (a sparring fight - talk to your mentor afterwards) or free time. Do it and explore as long
   as you like - a done task never sends you home - then turn it in at its end point. Then the clan's event, if any (a
-  clan meeting, the Gathering). The **evening** is the clan together in camp: your clanmates join you, eat and
+  clan meeting, called in the books' words from your clan's meeting place - `duties.ini [MeetingPlace]`; the Gathering).
+  The **evening** is the clan together in camp: your clanmates join you, eat and
   **share tongues** - a short staged scene. At **night**, go to your den - your own or your rank's (apprentices',
   warriors' ...) - and your cat lies down and sleeps until morning; or the **night watch** at the camp's entrance. Tasks
   done raise your standing in the clan; missed ones lower it. The clan's day waits while a conversation or cutscene is

@@ -68,6 +68,7 @@ local function nextCard()
         return
     end
     local c = table.remove(cards.queue, 1)
+    log("card: %s", tostring(c.text))
     local ok, err = pcall(function()
         local class = WaCa.LoadAsset(CARD)
         local controller = pc()

@@ -33,7 +33,8 @@ a way to tell their own stories in it, without programming.
 - **The deputy assigns your task** each morning and afternoon (deputies and leaders give out the clan's tasks at its
   meeting place instead): hunt for the fresh-kill pile, patrol the border with
   clanmates, train with your mentor, or free time. Explore as long as you like - a finished task never drags you home.
-- **Clan events**: meetings, and in the evening the clan gathers around you to **eat together and share tongues**.
+- **Clan events**: clan meetings ("Let all cats old enough to catch their own prey..."), and in the evening the clan
+  comes together around you to **eat and share tongues**.
 - **Night**: sleep in your den, or keep **night watch** at the camp's entrance.
 - **Gatherings**: the leader picks who goes - your standing and the leader's favour count. Not chosen? Someone has to
   guard the camp...

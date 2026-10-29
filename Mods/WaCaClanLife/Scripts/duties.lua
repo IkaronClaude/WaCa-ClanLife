@@ -633,11 +633,19 @@ local function statusSoon()
     end)
 end
 
+-- where your clan's leader speaks from ([MeetingPlace] in duties.ini, per clan - the game's text names none): the
+-- lake era's (ThunderClan's Highledge - Highrock was the old forest's: operator 2026-10-28), else Default
+local function meetingPlace()
+    local clan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
+    local places = cfg.meetingPlaces or {}
+    return (clan and places[clan]) or places.Default or "the leader's rock"
+end
+
 local function context()
     local t = today and today.task
     return { DAY = today and today.day, THIRD = thirdLabel():lower(), TASK = t and describe(t) or "",
              N = t and (t.need or (t.points and #t.points)) or "", DEPUTY = cfg.deputyName,
-             WHO = t and t.who or "", RESTKEY = cfg.restKey }
+             WHO = t and t.who or "", RESTKEY = cfg.restKey, MEETINGPLACE = meetingPlace() }
 end
 
 local function append(into, steps) for _, s in ipairs(steps or {}) do table.insert(into, s) end end
@@ -1246,6 +1254,10 @@ function Duties.Init(c)
     cfg.on = c.part("Duties", d.On)
     cfg.maxRank = (d.MaxRank or "") ~= "" and d.MaxRank or cfg.maxRank
     cfg.deputyName = (d.DeputyName or "") ~= "" and d.DeputyName or "The deputy"
+    cfg.meetingPlaces = {}
+    for name, v in pairs(ini["MeetingPlace"] or {}) do
+        if name ~= "__order" and v ~= "" then cfg.meetingPlaces[name] = v end
+    end
     cfg.campRadius = tonumber(d.CampRadius or "") or cfg.campRadius
     cfg.campMax = tonumber(d.CampMax or "") or cfg.campMax
     cfg.reportKey = (d.ReportKey or "") ~= "" and d.ReportKey or cfg.reportKey
