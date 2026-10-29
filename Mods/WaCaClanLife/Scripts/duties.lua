@@ -1316,6 +1316,34 @@ local function dutiesSelfTest()
         Events.SetVar("Event:" .. any.name, 0)
         any.chance = savedChance
     end
+    -- the places: the second patrol / hunt avoids the first one's (markers cleaned up again)
+    local function drop(points)
+        for _, pt in ipairs(points or {}) do
+            pcall(function() local m = StaticFindObject(pt.marker) if m and m:IsValid() then m:K2_DestroyActor() end end)
+        end
+    end
+    local samePatrol, patrolNote = 0, ""
+    local okP = pcall(function()
+        local first = patrolPoints(2)
+        local firstKeys = {}
+        for k in pairs(lastPatrol) do firstKeys[k] = true end
+        local second = patrolPoints(2)
+        for k in pairs(lastPatrol) do if firstKeys[k] then samePatrol = samePatrol + 1 end end
+        patrolNote = string.format("%d + %d points", #first, #second)
+        drop(first)
+        drop(second)
+    end)
+    local sameHunt, huntNote = false, ""
+    local okH = pcall(function()
+        local h1 = huntingGround()
+        local h2 = huntingGround()
+        sameHunt = h1 and h2 and math.abs(h1.X - h2.X) < 1 and math.abs(h1.Y - h2.Y) < 1 or false
+        huntNote = (h1 and h2) and "two spots" or "no prey around"
+        drop({ h1, h2 })
+    end)
+    log("duties: self-test - no repeat: patrol places shared by two draws %d (%s): %s; hunt spot twice the same: %s (%s): %s",
+        samePatrol, patrolNote, (okP and samePatrol == 0) and "PASS" or "FAIL", tostring(sameHunt), huntNote,
+        (okH and not sameHunt) and "PASS" or "FAIL")
     log("duties: self-test - the story day's chances win: %s; equal chances, back-to-back repeats %d of 39 (by pure chance ~13): %s; Event:%s = 1 plays at 0%%: %s, = -1 never at 100%%: %s",
         storyWins and "PASS" or "FAIL", repeats, repeats <= 8 and "PASS" or "FAIL", any and any.name or "?",
         forced and "PASS" or "FAIL", blocked and "PASS" or "FAIL")
