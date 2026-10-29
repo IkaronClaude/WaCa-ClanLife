@@ -198,9 +198,16 @@ local POSES = {
 local MONTAGES = "/Game/Art/Characters/CatMaster/Animations/Montages/"
 local FADE = 0.8
 
-local function montage(pose)
+-- (a pose with variants: each cat always the same one, by its name - nothing here is chance)
+local function montage(pose, cat)
     local names = POSES[pose]
-    local path = names and (MONTAGES .. names[math.random(#names)]) or pose
+    local pick = 1
+    if names and #names > 1 then
+        local key = 0
+        pcall(function() for ch in cat:GetFName():ToString():gmatch(".") do key = key + ch:byte() end end)
+        pick = key % #names + 1
+    end
+    local path = names and (MONTAGES .. names[pick]) or pose
     if not path:find("%.") then path = path .. "." .. path:match("([^/]+)$") end
     local ok, m = pcall(WaCa.LoadAsset, path)
     return ok and m and m:IsValid() and m or nil
@@ -213,6 +220,10 @@ local function poseTargets(who, ctx)
     if who == "Gathered" or who == "All" then
         for _, g in ipairs(ctx and ctx.gathered or {}) do
             local a = StaticFindObject(g.path)
+            if a and a:IsValid() then table.insert(out, a) end
+        end
+        for _, path in ipairs(ctx and ctx.anchors or {}) do
+            local a = StaticFindObject(path)
             if a and a:IsValid() then table.insert(out, a) end
         end
     end
@@ -246,7 +257,7 @@ end
 function Events.Pose(pose, who, ctx)
     local n = 0
     for _, cat in ipairs(poseTargets(who, ctx)) do
-        local m = montage(pose)
+        local m = montage(pose, cat)
         if m and playMontage(cat, m) then n = n + 1 end
     end
     log("events: pose %s - %d cat(s) (%s)", tostring(pose), n, tostring(who or "Gathered"))
@@ -497,6 +508,7 @@ local function identity(cat)
 end
 
 local function getsOn(a, b)
+    if a.anchor and b.anchor then return false end          -- (two cats that stay put can't sit together)
     if relations.tensions[a.name] and relations.tensions[a.name][b.name] then return false end
     -- the leader: only its mate and / or the deputy
     for _, pair in ipairs({ { a, b }, { b, a } }) do
@@ -508,72 +520,171 @@ local function getsOn(a, b)
     return true
 end
 
-local function liking(a, b)
-    local s = 0
-    if relations.mates[a.name] and relations.mates[a.name][b.name] then s = s + 5 end
-    if relations.friends[a.name] and relations.friends[a.name][b.name] then s = s + 3 end
-    if a.role == b.role then s = s + (a.role == "Apprentice" and 4 or 2) end
-    if (a.role == "Kit" and b.role == "Queen") or (a.role == "Queen" and b.role == "Kit") then s = s + 3 end
-    return s + math.random() * 0.5
+-- THE GROUPS ARE NEVER CHANCE (operator 2026-10-29: "in this kind of source material there is no place for random
+-- chance, every action and every deviation carries meaning - it should always be leader and deputy with each other
+-- unless an event happens, e.g. the leader is ill"). The same clan always sits the same way; a story event changes it
+-- through story variables (Set: LeaderAway = 1 ...):
+--   1. the leader with its mate(s) and the deputy - LeaderAway >= 1: the leader sits nowhere (ill, away);
+--      DeputyAway >= 1: the deputy isn't there. A leader with neither sits alone.
+--   2. queens with their kits.
+--   3. mates together; then by role - apprentices with apprentices, medicine cats, elders, warriors - in 3s and 2s
+--      (never one left alone: 4 -> 2 + 2, 7 -> 3 + 2 + 2), friends next to each other.
+--   4. tensions never together (nor two cats that stay put); a cat that can't sit with its own kind joins the first
+--      group with room it gets on with.
+--   5. sharing prey: a group of 4 only round a big piece (BigPrey >= 1).
+local function storyFlag(name)
+    local ok, yes = pcall(function() return Events.Check(name .. " >= 1") end)
+    return ok and yes == true
 end
 
--- the cats into groups of the kind's sizes; returns the groups (lists of identities) and the cats left apart
+local function tied(set, a, b) return set[a.name] and set[a.name][b.name] or false end
+
+local function chunkSizes(n)
+    if n <= 0 then return {} end
+    if n <= 3 then return { n } end
+    if n == 4 then return { 2, 2 } end
+    local out = {}
+    local left = n
+    while left > 0 do
+        if left == 4 then out[#out + 1] = 2 out[#out + 1] = 2 left = 0
+        elseif left <= 3 then out[#out + 1] = left left = 0
+        else out[#out + 1] = 3 left = left - 3 end
+    end
+    return out
+end
+
+-- the cats into groups; returns the groups (lists of identities) and the cats that sit apart
 local function makeGroups(cats, kind)
-    local pool, groups, apart = {}, {}, {}
+    local ROLE_ORDER = { Leader = 1, Deputy = 2, Queen = 3, Kit = 4, Apprentice = 5, MedicineCat = 6, Elder = 7, Warrior = 8 }
+    local pool = {}
     for _, c in ipairs(cats) do pool[#pool + 1] = c end
-    -- (the most particular first: the player, the leader, then apprentices ...)
-    local order = { Player = 0, Leader = 1, Apprentice = 2, Kit = 3, Elder = 4 }
-    table.sort(pool, function(a, b)
-        local x, y = a.player and 0 or (order[a.role] or 5), b.player and 0 or (order[b.role] or 5)
-        if x ~= y then return x < y end
-        return a.name < b.name
+    table.sort(pool, function(x, y)
+        local a, b = ROLE_ORDER[x.role] or 9, ROLE_ORDER[y.role] or 9
+        if a ~= b then return a < b end
+        return x.name < y.name
     end)
-    local bigDone = false
-    while #pool > 0 do
-        local seed = table.remove(pool, 1)
-        -- (sizes that leave nobody on their own: 4 cats -> 2 + 2, 5 -> 3 + 2, 7 -> 3 + 2 + 2 ...; a 6-cat camp left
-        -- one cat apart with 3 + 3 + 1 - VM 2026-10-29)
-        local r = #pool + 1
-        local size
-        if r <= 3 then size = r
-        elseif r == 4 then size = 2
-        elseif r - 3 == 1 then size = 2
-        elseif r - 2 == 1 then size = 3
-        else size = math.random() < 0.5 and 3 or 2 end
-        if kind == "Prey" and not bigDone and #pool + 1 >= 4 and math.random() < 0.35 then size, bigDone = 4, true end
-        local g = { seed }
-        while #g < size do
-            local best, bestScore, bestI
-            for i, c in ipairs(pool) do
-                local ok = true
-                for _, m in ipairs(g) do if not getsOn(c, m) then ok = false break end end
-                if ok then
-                    local s = 0
-                    for _, m in ipairs(g) do s = s + liking(c, m) end
-                    if not bestScore or s > bestScore then best, bestScore, bestI = c, s, i end
+    local used, groups, apart = {}, {}, {}
+    local function free(c) return not used[c] end
+    local function fits(c, g)
+        for _, m in ipairs(g) do if not getsOn(c, m) then return false end end
+        return true
+    end
+    local maxSize = (kind == "Prey" and storyFlag("BigPrey")) and 4 or 3
+
+    -- 1. the leader's group
+    local leader
+    for _, c in ipairs(pool) do if c.role == "Leader" then leader = c break end end
+    if leader then
+        used[leader] = true
+        if storyFlag("LeaderAway") then
+            apart[#apart + 1] = leader
+        else
+            local g = { leader }
+            for _, c in ipairs(pool) do
+                if free(c) and tied(relations.mates, leader, c) and fits(c, g) then g[#g + 1] = c used[c] = true end
+            end
+            if not storyFlag("DeputyAway") then
+                for _, c in ipairs(pool) do
+                    if free(c) and c.role == "Deputy" and fits(c, g) then g[#g + 1] = c used[c] = true break end
                 end
             end
-            if not best then break end
-            table.remove(pool, bestI)
-            g[#g + 1] = best
+            if #g >= 2 then groups[#groups + 1] = g else apart[#apart + 1] = leader end
         end
-        if #g >= 2 then groups[#groups + 1] = g else apart[#apart + 1] = seed end
     end
-    -- (a cat left on its own by a tension joins another group with room - one of 3 at most, 4 for prey - where it
-    -- gets on with everyone; the leader without its mate / deputy stays apart)
-    local still = {}
-    for _, c in ipairs(apart) do
-        local home
-        for _, g in ipairs(groups) do
-            if #g < (kind == "Prey" and 4 or 3) then
-                local ok = true
-                for _, m in ipairs(g) do if not getsOn(c, m) then ok = false break end end
-                if ok then home = g break end
+    -- (a deputy kept away by a story event sits nowhere)
+    if storyFlag("DeputyAway") then
+        for _, c in ipairs(pool) do if free(c) and c.role == "Deputy" then used[c] = true apart[#apart + 1] = c end end
+    end
+
+    -- 2. queens with their kits
+    for _, q in ipairs(pool) do
+        if free(q) and q.role == "Queen" then
+            local g = { q }
+            used[q] = true
+            for _, k in ipairs(pool) do
+                if free(k) and k.role == "Kit" and #g < maxSize and fits(k, g) then g[#g + 1] = k used[k] = true end
+            end
+            if #g >= 2 then groups[#groups + 1] = g else used[q] = nil end
+        end
+    end
+
+    -- 3. mates together
+    for _, a in ipairs(pool) do
+        if free(a) then
+            for _, b in ipairs(pool) do
+                if b ~= a and free(b) and tied(relations.mates, a, b) and getsOn(a, b) then
+                    local g = { a, b }
+                    used[a], used[b] = true, true
+                    for _, c in ipairs(pool) do
+                        if free(c) and #g < maxSize and (tied(relations.friends, a, c) or tied(relations.friends, b, c))
+                            and fits(c, g) then g[#g + 1] = c used[c] = true end
+                    end
+                    groups[#groups + 1] = g
+                    break
+                end
             end
         end
-        if home then home[#home + 1] = c else still[#still + 1] = c end
     end
-    return groups, still
+
+    -- 3b. by role: each role's cats in order, a cat's friends right after it, cut into 3s and 2s
+    local buckets = { "Apprentice", "MedicineCat", "Elder", "Warrior", "Deputy", "Queen", "Kit" }
+    local single = {}
+    for _, role in ipairs(buckets) do
+        local list = {}
+        local placed = {}
+        for _, c in ipairs(pool) do
+            if free(c) and c.role == role and not placed[c] then
+                list[#list + 1] = c
+                placed[c] = true
+                for _, f in ipairs(pool) do
+                    if free(f) and f.role == role and not placed[f] and tied(relations.friends, c, f) then
+                        list[#list + 1] = f
+                        placed[f] = true
+                    end
+                end
+            end
+        end
+        for _, size in ipairs(chunkSizes(#list)) do
+            local g = {}
+            for _, c in ipairs(list) do
+                if #g >= size then break end
+                if free(c) and fits(c, g) then g[#g + 1] = c used[c] = true end
+            end
+            if #g >= 2 then groups[#groups + 1] = g
+            else for _, c in ipairs(g) do used[c] = nil end end
+        end
+        for _, c in ipairs(list) do if free(c) then single[#single + 1] = c end end
+    end
+
+    -- 4. the rest join the first group with room they get on with; two of them that fit each other sit together;
+    -- whoever is left sits apart
+    local rest = {}
+    for _, c in ipairs(single) do
+        local home
+        for _, g in ipairs(groups) do
+            local lead = false
+            for _, m in ipairs(g) do if m.role == "Leader" then lead = true end end
+            if not lead and #g < maxSize and fits(c, g) then home = g break end
+        end
+        if home then home[#home + 1] = c used[c] = true else rest[#rest + 1] = c end
+    end
+    local i = 1
+    while i <= #rest do
+        local c = rest[i]
+        local partner
+        for j = i + 1, #rest do
+            if free(rest[j]) and getsOn(c, rest[j]) then partner = rest[j] break end
+        end
+        if partner and free(c) then
+            groups[#groups + 1] = { c, partner }
+            used[c], used[partner] = true, true
+        elseif free(c) then
+            apart[#apart + 1] = c
+            used[c] = true
+        end
+        i = i + 1
+    end
+    return groups, apart
 end
 
 -- the grouping rules checked on a made-up roster (the event WaCaGroupsSelfTest from any mod / the test harness): the
@@ -590,44 +701,52 @@ local function groupsSelfTest()
         { name = "Mosspaw", role = "Apprentice" }, { name = "Fernpaw", role = "Apprentice" },
         { name = "Thornclaw", role = "Warrior" }, { name = "Briarfang", role = "Warrior" },
         { name = "Daisytail", role = "Queen" }, { name = "Pebblekit", role = "Kit" },
+        { name = "Ashfur", role = "Warrior" },
     }
-    local fails = { tension = 0, leader = 0, size = 0 }
-    local appTogether, appTotal = 0, 0
+    local function where(groups)
+        local at = {}
+        for i, g in ipairs(groups) do for _, m in ipairs(g) do at[m.name] = i end end
+        return at
+    end
+    local results = {}
+    local function check(label, ok) results[#results + 1] = label .. ": " .. (ok and "PASS" or "FAIL") end
+    local first
     for _, kind in ipairs({ "Tongues", "Prey" }) do
-        for _ = 1, 20 do
-            local groups = makeGroups(roster, kind)
-            for _, g in ipairs(groups) do
-                local has = {}
-                for _, m in ipairs(g) do has[m.name] = m end
-                if has.Thornclaw and has.Briarfang then fails.tension = fails.tension + 1 end
-                if has.Leaderstar then
-                    for _, m in ipairs(g) do
-                        if m.name ~= "Leaderstar" and m.name ~= "Matepelt" and m.role ~= "Deputy" then fails.leader = fails.leader + 1 end
-                    end
-                end
-                if #g < 2 or #g > (kind == "Prey" and 4 or 3) then fails.size = fails.size + 1 end
-                local apps = 0
-                for _, m in ipairs(g) do if m.role == "Apprentice" then apps = apps + 1 end end
-                if apps > 0 then
-                    appTotal = appTotal + apps
-                    if apps >= 2 then appTogether = appTogether + apps end
-                end
-            end
-        end
+        local groups, apart = makeGroups(roster, kind)
+        local at = where(groups)
+        check(kind .. " leader with deputy + mate", at.Leaderstar ~= nil and at.Leaderstar == at.Deputyfur and at.Leaderstar == at.Matepelt)
+        check(kind .. " tension apart", at.Thornclaw == nil or at.Thornclaw ~= at.Briarfang)
+        check(kind .. " apprentices together", at.Sparrowpaw ~= nil and at.Sparrowpaw == at.Mosspaw and at.Mosspaw == at.Fernpaw)
+        check(kind .. " kit with its queen", at.Pebblekit ~= nil and at.Pebblekit == at.Daisytail)
+        local sizesOk = true
+        for _, g in ipairs(groups) do if #g < 2 or #g > 3 then sizesOk = false end end
+        check(kind .. " sizes 2-3 (no BigPrey)", sizesOk and #apart == 0)
+        -- the same every time
+        local again = where((makeGroups(roster, kind)))
+        local same = true
+        for name, i in pairs(at) do if again[name] ~= i then same = false end end
+        check(kind .. " the same every time", same)
+        if kind == "Tongues" then first = groups end
+    end
+    -- the leader away (a story event): it sits nowhere, the deputy sits with others
+    local ok = pcall(function() Events.SetVar("LeaderAway", 1) end)
+    if ok then
+        local groups, apart = makeGroups(roster, "Tongues")
+        local at = where(groups)
+        local leaderApart = false
+        for _, m in ipairs(apart) do if m.name == "Leaderstar" then leaderApart = true end end
+        check("LeaderAway: the leader sits apart", leaderApart and at.Leaderstar == nil)
+        pcall(function() Events.SetVar("LeaderAway", 0) end)
     end
     relations = saved
-    local share = appTotal > 0 and appTogether / appTotal or 0
-    log("events: groups self-test - tensions apart: %s (%d broken), leader only with mate / deputy: %s (%d broken), sizes: %s (%d off), apprentices with apprentices: %.0f%% %s",
-        fails.tension == 0 and "PASS" or "FAIL", fails.tension, fails.leader == 0 and "PASS" or "FAIL", fails.leader,
-        fails.size == 0 and "PASS" or "FAIL", fails.size, share * 100, share >= 0.8 and "PASS" or "FAIL")
-    local sample = makeGroups(roster, "Tongues")
+    log("events: groups self-test - %s", table.concat(results, ", "))
     local lines = {}
-    for i, g in ipairs(sample) do
+    for i, g in ipairs(first or {}) do
         local names = {}
         for _, m in ipairs(g) do names[#names + 1] = m.name .. " (" .. m.role .. ")" end
         lines[#lines + 1] = i .. ": " .. table.concat(names, ", ")
     end
-    log("events: groups self-test - a sample: %s", table.concat(lines, " | "))
+    log("events: groups self-test - tongues: %s", table.concat(lines, " | "))
 end
 
 function Events.Groups(kind, where, ctx, done)
@@ -642,8 +761,24 @@ function Events.Groups(kind, where, ctx, done)
         local who = identity(c)
         if not (myClan and who.clan and who.clan ~= myClan) then cats[#cats + 1] = who end
     end
+    -- the camp's named cats (its quest cats: Lionstar, Troutwing ...) take part where they are - moved, they don't
+    -- draw (VM 2026-10-28) - each one the middle of its group; the walking cats and yours come to them. Only the ones
+    -- the game shows, of your clan, in a clan role (not rogues / StarClan).
+    for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+        pcall(function()
+            if not (a:IsValid() and not a.bHidden and a.SkeletalMeshComponent:IsVisible()) then return end
+            local q = a:K2_GetActorLocation()
+            if math.sqrt((q.X - place.X) ^ 2 + (q.Y - place.Y) ^ 2) > cfg.gatherRadius then return end
+            local who = identity(a)
+            who.role = ROLE_NAMES[a.GiverRole] or who.role
+            who.anchor = true
+            local inRole = false
+            for _, r in pairs(ROLE_NAMES) do if r == who.role then inRole = true end end
+            if inRole and not (myClan and who.clan and who.clan ~= myClan) then cats[#cats + 1] = who end
+        end)
+    end
     if #cats == 0 then
-        log("events: groups - no walking clan cats within %.0f m", cfg.gatherRadius / 100)
+        log("events: groups - no clan cats within %.0f m", cfg.gatherRadius / 100)
         return done()
     end
     local rank = WaCa.PlayerRank and WaCa.PlayerRank() or 2
@@ -678,11 +813,64 @@ function Events.Groups(kind, where, ctx, done)
             putBack(before)
             pcall(function() stopMontage(pawn) end)
         end
+        for _, path in ipairs(ctx.anchors or {}) do
+            local a = StaticFindObject(path)
+            if a and a:IsValid() then stopMontage(a) end
+        end
         local facing = 0
         pcall(function() facing = pc().PlayerCameraManager:GetCameraRotation().Yaw end)
         local fwd, side = math.rad(facing), math.rad(facing + 90)
         local n, k = 0, 0
+        ctx.anchors = {}
         for _, g in ipairs(groups) do
+            local anchor
+            for _, m in ipairs(g) do if m.anchor then anchor = m end end
+            if anchor then
+                -- round a cat that stays put: the middle just off it towards the camp's middle; the others (your cat
+                -- too, set down in its seat) round the middle from its far side
+                pcall(function()
+                    local aq = anchor.cat:K2_GetActorLocation()
+                    table.insert(ctx.anchors, (anchor.cat:GetFullName():gsub("^%S+ ", "")))
+                    local dx, dy = place.X - aq.X, place.Y - aq.Y
+                    local len = math.max(1, math.sqrt(dx * dx + dy * dy))
+                    local mid = { X = aq.X + dx / len * cfg.groupRadius, Y = aq.Y + dy / len * cfg.groupRadius, Z = aq.Z }
+                    local base = math.atan(aq.Y - mid.Y, aq.X - mid.X)
+                    local slot = 0
+                    for _, m in ipairs(g) do
+                        if not m.anchor then
+                            slot = slot + 1
+                            local a = base + slot / #g * 2 * math.pi
+                            local spot = { X = mid.X + math.cos(a) * cfg.groupRadius,
+                                           Y = mid.Y + math.sin(a) * cfg.groupRadius, Z = aq.Z + 20 }
+                            local yaw = math.deg(math.atan(mid.Y - spot.Y, mid.X - spot.X))
+                            if m.player then
+                                pawn:K2_SetActorLocationAndRotation(spot, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                            else
+                                local cat = m.cat
+                                local l, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()
+                                table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")),
+                                    loc = { X = l.X, Y = l.Y, Z = l.Z }, rot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll } })
+                                if cfg.walkIn then
+                                    -- (from the open ground towards the camp's middle, like the other groups: set down
+                                    -- past the seat - by the dens, where the named cats sit - 0-1 of 6 got there:
+                                    -- VM 2026-10-29)
+                                    local sx, sy = spot.X - place.X, spot.Y - place.Y
+                                    local sl = math.max(1, math.sqrt(sx * sx + sy * sy))
+                                    local back = math.min(cfg.walkFrom, sl - cfg.walkReach)
+                                    local from = { X = spot.X - sx / sl * back, Y = spot.Y - sy / sl * back, Z = spot.Z }
+                                    if back < cfg.walkReach then from = { X = spot.X, Y = spot.Y, Z = spot.Z } end
+                                    cat:K2_SetActorLocationAndRotation(from, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                                    walking[#walking + 1] = { cat = cat, spot = spot, yaw = yaw }
+                                else
+                                    cat:K2_SetActorLocationAndRotation(spot, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                                    holdAI(cat, true)
+                                end
+                                n = n + 1
+                            end
+                        end
+                    end
+                end)
+            else
             -- the group's middle: your cat's group just ahead of it; the rest in rows further on, spread sideways
             local ahead, across
             local hasMe = false
@@ -750,8 +938,10 @@ function Events.Groups(kind, where, ctx, done)
                     pawn:K2_SetActorRotation({ pitch = 0, Yaw = yaw, Roll = 0 }, true)
                 end)
             end
+            end
         end
-        log("events: groups - %d clanmate(s) placed%s", n, cfg.walkIn and (", " .. #walking .. " walking in") or "")
+        log("events: groups - %d clanmate(s) placed, %d round cats that stay put%s", n, #ctx.anchors,
+            cfg.walkIn and (", " .. #walking .. " walking in") or "")
         fadeScreen(1, 0, FADE)
         if #walking == 0 then
             ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done)
@@ -863,13 +1053,18 @@ end
 
 function Events.Release(ctx, done)
     local g = ctx and ctx.gathered
-    if not (g and #g > 0) then
+    if not ((g and #g > 0) or (ctx and ctx.anchors and #ctx.anchors > 0)) then
         if done then done() end
         return
     end
     fadeScreen(0, 1, FADE)
     ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
         putBack(g)
+        for _, path in ipairs(ctx.anchors or {}) do
+            local a = StaticFindObject(path)
+            if a and a:IsValid() then stopMontage(a) end
+        end
+        ctx.anchors = nil
         pcall(function() stopMontage(pc().Pawn) end)
         ctx.gathered = nil
         log("events: release - the clanmates are back in their places")
