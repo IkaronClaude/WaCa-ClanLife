@@ -49,10 +49,15 @@ plays.
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
   builds on (rogues attack the camp while half the clan is away...).
-- **The camp's walking cats are its named cats** (`walkers.ini`): the game walks a few nameless cats round camp; each
-  third of the day they wear the camp's named cats in turn (look and name), that cat's placed self hidden meanwhile.
-  Never the key cats (story characters, leader, deputy, medicine cat, the clan's services, queens, kits). Story lever:
-  `Walk:<Name>` = 1 walks next, -1 never.
+- **The camp's named cats move about** (`walkers.ini`): the game's nameless walking cats are taken out; instead, each
+  third of the day a few of the camp's named cats move (the ones that moved longest ago first), on the game's own walk
+  animation, following the ground. Plain warriors, apprentices and elders roam across camp (a den's front, the
+  fresh-kill pile, the meeting place, another cat's spot) and come home; cats with a part (trainer, medicine cat,
+  leader, deputy, queens, kits, story cats) only step over to a nearby spot and back. Talking to a cat stops it (the
+  others hold too); nobody moves while a menu or scene is up. In the evening's groups the named cats walk to their
+  seats and home again. Story lever: `Walk:<Name>` = 1 moves next, -1 never.
+  For other mods: the `WalkerMoves` event (name, actor path, `home`/`away`) when a cat sets off, and `PlayScene`
+  (step lines as in `clanevents.ini`, joined by `|`, e.g. `Groups: Prey|Wait: 3|Release`) to play a scene now.
 - **The clan's own patrols** (`patrols.ini`): clanmates gather in camp and head out to the border together.
 - **New things to say** (`lines.ini`): lines per cat role and time of day, and **dialogue by story day** - a queen says
   one of three lines each day of a week, a new one each day, no repeats until all were said.

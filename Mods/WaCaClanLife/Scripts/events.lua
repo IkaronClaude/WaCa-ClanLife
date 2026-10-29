@@ -390,15 +390,28 @@ end
 local staging = false
 function Events.Staging() return staging end
 
+-- walkers.lua on: the camp's named cats move (its walker took the nameless walking cats out) - they come to the scenes
+-- themselves, walked to their seats by it, instead of standing where they are
+local function namedWalk()
+    local ok, W = pcall(require, "walkers")
+    return (ok and W and W.On and W.On()) and W or nil
+end
+
 -- the staged cats back where they were (their poses stopped, their AI on again)
 local function putBack(g)
     for _, e in ipairs(g or {}) do
         local a = StaticFindObject(e.path)
         if a and a:IsValid() then
             stopMontage(a)
-            local ok, err = pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
-            if not ok then log("events: release - %s stays: %s", e.path, tostring(err)) end
-            holdAI(a, false)
+            if e.walker then
+                -- (a named cat walks home - walkers.lua)
+                local W = namedWalk()
+                if W then W.Unstage(a) end
+            else
+                local ok, err = pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
+                if not ok then log("events: release - %s stays: %s", e.path, tostring(err)) end
+                holdAI(a, false)
+            end
         end
     end
 end
@@ -818,7 +831,8 @@ function Events.Groups(kind, where, ctx, done)
             if math.sqrt((q.X - place.X) ^ 2 + (q.Y - place.Y) ^ 2) > cfg.gatherRadius then return end
             local who = identity(a)
             who.role = ROLE_NAMES[a.GiverRole] or who.role
-            who.anchor = true
+            who.named = true
+            who.anchor = namedWalk() == nil
             local inRole = false
             for _, r in pairs(ROLE_NAMES) do if r == who.role then inRole = true end end
             if inRole and not (myClan and who.clan and who.clan ~= myClan) then cats[#cats + 1] = who end
@@ -956,9 +970,18 @@ function Events.Groups(kind, where, ctx, done)
                     local yaw = math.deg(math.atan(mid.Y - spot.Y, mid.X - spot.X))
                     local cat = m.cat
                     local l, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()
-                    table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")),
+                    local W = m.named and namedWalk() or nil
+                    table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")), walker = W ~= nil,
                                                  loc = { X = l.X, Y = l.Y, Z = l.Z }, rot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll } })
-                    if cfg.walkIn then
+                    if W then
+                        -- (a named cat walks over from where it is - walkers.lua's own walk)
+                        -- (at the scene's walk-in speed; its time its own way there + 4 s - from their homes across camp
+                        -- they came 10-18 m and a flat WalkSeconds set 7 of 9 down short: VM 2026-10-29)
+                        W.Stage(cat, spot, yaw, cfg.walkSpeed)
+                        local far = math.sqrt((spot.X - l.X) ^ 2 + (spot.Y - l.Y) ^ 2)
+                        walking[#walking + 1] = { cat = cat, spot = spot, yaw = yaw, named = W,
+                                                  limit = far / math.max(cfg.walkSpeed, 1) + 4 }
+                    elseif cfg.walkIn then
                         -- (they walk in: set down a few metres out from their seat, inside the game's range so their AI
                         -- runs - from afar the game freezes them and a move order did nothing: VM 2026-10-28)
                         -- (from the open ground round your cat - the meeting place - out to its seat: set down WalkFrom
@@ -1000,6 +1023,7 @@ function Events.Groups(kind, where, ctx, done)
         -- its behaviour tree paused so it doesn't wander off. Seated = turned to the middle and held. Who isn't there
         -- after WalkSeconds is set down in its seat.
         for _, w in ipairs(walking) do
+            if w.named then goto continue end
             pcall(function() w.cat.Controller.BrainComponent:StopLogic("WaCa gathering") end)
             pcall(function() w.cat.Controller:StopMovement() end)
             -- (the camp cats amble at 50 - a pace that took ~6 s for 3 m: they walk over at WalkSpeed, then back to
@@ -1013,6 +1037,7 @@ function Events.Groups(kind, where, ctx, done)
                 w.speed = m.MaxWalkSpeed
                 m.MaxWalkSpeed = math.max(w.speed, cfg.walkSpeed)
             end)
+            ::continue::
         end
         -- (the game's own clock: it stops with the game and slows with it - at a low frame rate the cats walk in game
         -- seconds, and a wall-clock limit gave up on cats still on their way: VM 2026-10-29)
@@ -1022,9 +1047,15 @@ function Events.Groups(kind, where, ctx, done)
             return ok and t or os.time()
         end
         local started = gameNow()
+        local longest = cfg.walkSeconds               -- (the scene waits for its farthest named cat's own limit)
+        for _, w in ipairs(walking) do if w.limit and w.limit > longest then longest = w.limit end end
         local waited, lastReport = 0, 0
         local function seat(w, snapped)
             w.seated = true
+            if w.named then
+                if snapped then w.named.Seat(w.cat) end
+                return
+            end
             pcall(function() w.cat.CapsuleComponent:SetCollisionResponseToChannel(2, 2) end)   -- (Pawn: Block)
             pcall(function() if w.speed then w.cat.CharacterMovement.MaxWalkSpeed = w.speed end end)
             pcall(function()
@@ -1040,7 +1071,15 @@ function Events.Groups(kind, where, ctx, done)
             waited = gameNow() - started
             local left, walked = 0, 0
             for _, w in ipairs(walking) do
-                if not w.seated then
+                if not w.seated and w.named then
+                    -- (a named cat: walkers.lua walks it; seated when it's there - or set down at the time limit)
+                    if w.named.Staged(w.cat) then
+                        w.seated = true
+                        walked = walked + 1
+                    elseif waited < (w.limit or cfg.walkSeconds) then
+                        left = left + 1                     -- (still on its way; at its limit it is set down below)
+                    end
+                elseif not w.seated then
                     local ok, d = pcall(function()
                         local q = w.cat:K2_GetActorLocation()
                         return math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2)
@@ -1101,7 +1140,7 @@ function Events.Groups(kind, where, ctx, done)
                 end
                 log("events: groups - walking in, %.0f s: still to go %s", waited, table.concat(parts, " "))
             end
-            if left > 0 and waited < cfg.walkSeconds then
+            if left > 0 and waited < longest then
                 ExecuteInGameThreadWithDelay(100, check)
                 return
             end
@@ -1441,6 +1480,16 @@ function Events.Init(c)
     -- (other mods - a story mod - set the clan's story variables: WaCa.Emit("SetStoryVar", name, value))
     WaCa.On("SetStoryVar", function(name, value)
         if name then Events.SetVar(tostring(name), value) end
+    end)
+    -- (other mods: play steps now - step lines as in clanevents.ini, joined by "|": "Groups: Prey|Wait: 3|Release")
+    WaCa.On("PlayScene", function(text)
+        local steps = { context = {} }                  -- (a scene's own context: its gathered cats, its place)
+        for line in tostring(text or ""):gmatch("[^|]+") do
+            local st = Events.Parse(line)
+            if st then steps[#steps + 1] = st end
+        end
+        log("events: a scene asked for - %d step(s): %s", #steps, tostring(text))
+        if #steps > 0 then ExecuteInGameThread(function() Events.Play(steps) end) end
     end)
     WaCa.On("WaCaGroupsSelfTest", function()
         local ok, err = pcall(groupsSelfTest)
