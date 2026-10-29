@@ -36,7 +36,9 @@ local Events = {}
 
 local WaCa, log, modDir, DayNight
 local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
-local cfg = { cardSeconds = 5, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260, gatherArc = 90 }
+local cfg = { cardSeconds = 5, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260, gatherArc = 90,
+              groupRadius = 90, groupFirstRow = 340, groupRowGap = 280, groupSpread = 220,
+              walkIn = true, walkFrom = 700, walkReach = 80, walkSeconds = 12, walkSpeed = 150 }
 local list = {}                  -- hour-scheduled scenes: { name, day, every, hour, steps, once }
 local done = {}                  -- one-time scenes already played in this save
 local restoredFor
@@ -369,6 +371,365 @@ function Events.Gather(n, where, ctx, done)
     end)
 end
 
+-- the staged cats back where they were (their poses stopped, their AI on again)
+local function putBack(g)
+    for _, e in ipairs(g or {}) do
+        local a = StaticFindObject(e.path)
+        if a and a:IsValid() then
+            stopMontage(a)
+            local ok, err = pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
+            if not ok then log("events: release - %s stays: %s", e.path, tostring(err)) end
+            holdAI(a, false)
+        end
+    end
+end
+
+-- Groups: Tongues | Prey   the evening in camp (operator 2026-10-28): not one ring but small groups - sharing tongues in
+--                          circles of 2-3, sharing prey in 2s and 3s with now and then a 4 around a big piece. Who sits
+--                          with whom follows the cats' ties (config/relations.ini): cats with a tension never share a
+--                          group, the leader only sits with its mate and / or the deputy (else apart), apprentices with
+--                          apprentices first, then elders with elders, warriors with warriors. Your cat joins the
+--                          group that suits it best, right where it stands; the others are placed in front of the
+--                          camera (it sits ~1 m behind your cat), each group a small circle facing its own middle.
+local ROLE_NAMES = { [1] = "Kit", [2] = "Apprentice", [3] = "Elder", [4] = "Warrior", [5] = "MedicineCat", [6] = "Queen",
+                     [7] = "Deputy", [8] = "Leader" }
+local RANK_ROLES = { [0] = "Apprentice", "Apprentice", "Warrior", "Deputy", "Leader" }
+local relations = { mates = {}, tensions = {}, friends = {} }
+
+local function tie(set, a, b)
+    set[a] = set[a] or {}
+    set[b] = set[b] or {}
+    set[a][b], set[b][a] = true, true
+end
+
+local function readRelations(modDir)
+    local ini = WaCa.ReadContent(modDir .. "/config/relations.ini", "relations") or {}
+    local n = 0
+    for section, set in pairs({ Mates = relations.mates, Tensions = relations.tensions, Friends = relations.friends }) do
+        for a, list in pairs(ini[section] or {}) do
+            if a ~= "__order" and a ~= "__mods" and type(list) == "string" then
+                for b in list:gmatch("[^,]+") do
+                    b = b:match("^%s*(.-)%s*$")
+                    if b ~= "" then tie(set, a, b) n = n + 1 end
+                end
+            end
+        end
+    end
+    return n
+end
+
+local clanNames
+local function clanName(v)
+    if not clanNames then
+        clanNames = {}
+        pcall(function()
+            StaticFindObject("/Script/SwtQuest.EClanType"):ForEachName(function(n, x) clanNames[x] = n:ToString():gsub("^.*::", "") end)
+        end)
+    end
+    return clanNames[v]
+end
+
+-- a camp cat as the groups see it: its name (the game's own: name ids -> STR_CAT_NAME<n><_SUFFIX>), role and clan
+local function identity(cat)
+    local who = { cat = cat }
+    pcall(function()
+        local cd = cat.MeshCustomizationComponent.CustomData
+        who.role = ROLE_NAMES[cd.Role] or tostring(cd.Role)
+        who.clan = clanName(cd.ClanType)
+        local name = WaCa.GetText(cd.PrefixNameId:ToString() .. cd.SuffixNameId:ToString())
+        if name ~= "" then who.name = name end
+    end)
+    who.name = who.name or (cat:GetFName():ToString())
+    return who
+end
+
+local function getsOn(a, b)
+    if relations.tensions[a.name] and relations.tensions[a.name][b.name] then return false end
+    -- the leader: only its mate and / or the deputy
+    for _, pair in ipairs({ { a, b }, { b, a } }) do
+        local l, o = pair[1], pair[2]
+        if l.role == "Leader" and not (o.role == "Deputy" or (relations.mates[l.name] and relations.mates[l.name][o.name])) then
+            return false
+        end
+    end
+    return true
+end
+
+local function liking(a, b)
+    local s = 0
+    if relations.mates[a.name] and relations.mates[a.name][b.name] then s = s + 5 end
+    if relations.friends[a.name] and relations.friends[a.name][b.name] then s = s + 3 end
+    if a.role == b.role then s = s + (a.role == "Apprentice" and 4 or 2) end
+    if (a.role == "Kit" and b.role == "Queen") or (a.role == "Queen" and b.role == "Kit") then s = s + 3 end
+    return s + math.random() * 0.5
+end
+
+-- the cats into groups of the kind's sizes; returns the groups (lists of identities) and the cats left apart
+local function makeGroups(cats, kind)
+    local pool, groups, apart = {}, {}, {}
+    for _, c in ipairs(cats) do pool[#pool + 1] = c end
+    -- (the most particular first: the player, the leader, then apprentices ...)
+    local order = { Player = 0, Leader = 1, Apprentice = 2, Kit = 3, Elder = 4 }
+    table.sort(pool, function(a, b)
+        local x, y = a.player and 0 or (order[a.role] or 5), b.player and 0 or (order[b.role] or 5)
+        if x ~= y then return x < y end
+        return a.name < b.name
+    end)
+    local bigDone = false
+    while #pool > 0 do
+        local seed = table.remove(pool, 1)
+        local size = (#pool + 1 >= 3 and math.random() < 0.5) and 3 or 2
+        if kind == "Prey" and not bigDone and #pool + 1 >= 4 and math.random() < 0.35 then size, bigDone = 4, true end
+        local g = { seed }
+        while #g < size do
+            local best, bestScore, bestI
+            for i, c in ipairs(pool) do
+                local ok = true
+                for _, m in ipairs(g) do if not getsOn(c, m) then ok = false break end end
+                if ok then
+                    local s = 0
+                    for _, m in ipairs(g) do s = s + liking(c, m) end
+                    if not bestScore or s > bestScore then best, bestScore, bestI = c, s, i end
+                end
+            end
+            if not best then break end
+            table.remove(pool, bestI)
+            g[#g + 1] = best
+        end
+        if #g >= 2 then groups[#groups + 1] = g else apart[#apart + 1] = seed end
+    end
+    -- (a cat left on its own by a tension joins another group with room - one of 3 at most, 4 for prey - where it
+    -- gets on with everyone; the leader without its mate / deputy stays apart)
+    local still = {}
+    for _, c in ipairs(apart) do
+        local home
+        for _, g in ipairs(groups) do
+            if #g < (kind == "Prey" and 4 or 3) then
+                local ok = true
+                for _, m in ipairs(g) do if not getsOn(c, m) then ok = false break end end
+                if ok then home = g break end
+            end
+        end
+        if home then home[#home + 1] = c else still[#still + 1] = c end
+    end
+    return groups, still
+end
+
+function Events.Groups(kind, where, ctx, done)
+    kind = (kind == "Prey") and "Prey" or "Tongues"
+    local pawn = pc() and pc().Pawn
+    local place = placeOf(where)
+    if not (pawn and place) then return done() end
+    local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
+    local cats = {}
+    for _, c in ipairs(clanmatesNear(place, 40, cfg.gatherRadius)) do
+        local who = identity(c)
+        if not (myClan and who.clan and who.clan ~= myClan) then cats[#cats + 1] = who end
+    end
+    if #cats == 0 then
+        log("events: groups - no walking clan cats within %.0f m", cfg.gatherRadius / 100)
+        return done()
+    end
+    local rank = WaCa.PlayerRank and WaCa.PlayerRank() or 2
+    local me = { cat = pawn, player = true, role = RANK_ROLES[rank] or "Warrior", name = "your cat" }
+    pcall(function() local c = WaCa.SaveCharacter() if c and c.Name then me.name = c.Name end end)
+    cats[#cats + 1] = me
+    local groups, apart = makeGroups(cats, kind)
+    -- (your cat's group first: it forms where your cat stands)
+    table.sort(groups, function(a, b)
+        local x, y = false, false
+        for _, m in ipairs(a) do if m.player then x = true end end
+        for _, m in ipairs(b) do if m.player then y = true end end
+        return x and not y
+    end)
+    local lines = {}
+    for i, g in ipairs(groups) do
+        local names = {}
+        for _, m in ipairs(g) do names[#names + 1] = m.name .. " (" .. m.role .. ")" end
+        lines[#lines + 1] = i .. ": " .. table.concat(names, ", ")
+    end
+    local apartNames = {}
+    for _, m in ipairs(apart) do apartNames[#apartNames + 1] = m.name .. " (" .. m.role .. ")" end
+    log("events: groups (%s) - %d group(s): %s%s", kind, #groups, table.concat(lines, " | "),
+        #apart > 0 and (" | apart: " .. table.concat(apartNames, ", ")) or "")
+    local before = ctx.gathered
+    ctx.gathered, ctx.place = {}, place
+    fadeScreen(0, 1, FADE)
+    local walking = {}
+    ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
+        -- (a scene of several group steps - the meal, then sharing tongues: the last step's cats go back first)
+        if before and #before > 0 then
+            putBack(before)
+            pcall(function() stopMontage(pawn) end)
+        end
+        local facing = 0
+        pcall(function() facing = pc().PlayerCameraManager:GetCameraRotation().Yaw end)
+        local fwd, side = math.rad(facing), math.rad(facing + 90)
+        local n, k = 0, 0
+        for _, g in ipairs(groups) do
+            -- the group's middle: your cat's group just ahead of it; the rest in rows further on, spread sideways
+            local ahead, across
+            local hasMe = false
+            for _, m in ipairs(g) do if m.player then hasMe = true end end
+            if hasMe then
+                -- (beside your cat and a little ahead: straight ahead, its group hid behind your cat's own body from
+                -- the camera right behind it - VM 2026-10-29)
+                ahead, across = cfg.groupRadius * 0.5, cfg.groupRadius
+            else
+                k = k + 1
+                local row = math.floor((k - 1) / 3)
+                local col = (k - 1) % 3 - 1
+                ahead = cfg.groupFirstRow + row * cfg.groupRowGap
+                across = col * cfg.groupSpread * (1 + row * 0.5)
+            end
+            local mid = { X = place.X + math.cos(fwd) * ahead + math.cos(side) * across,
+                          Y = place.Y + math.sin(fwd) * ahead + math.sin(side) * across, Z = place.Z }
+            -- the members round the middle; your cat keeps its spot (the slot nearest the camera)
+            local others = {}
+            for _, m in ipairs(g) do if not m.player then others[#others + 1] = m end end
+            local count = #g
+            -- (round the circle from your cat's own place in it; another group from its side nearest the camera)
+            local base = fwd + math.pi
+            local radius = cfg.groupRadius
+            if hasMe then
+                base = math.atan(place.Y - mid.Y, place.X - mid.X)
+                radius = math.sqrt((place.X - mid.X) ^ 2 + (place.Y - mid.Y) ^ 2)
+            end
+            for i, m in ipairs(others) do
+                pcall(function()
+                    local slot = hasMe and i or (i - 1)
+                    local a = base + slot / count * 2 * math.pi
+                    local spot = { X = mid.X + math.cos(a) * radius, Y = mid.Y + math.sin(a) * radius,
+                                   Z = place.Z + 20 }
+                    local yaw = math.deg(math.atan(mid.Y - spot.Y, mid.X - spot.X))
+                    local cat = m.cat
+                    local l, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()
+                    table.insert(ctx.gathered, { path = (cat:GetFullName():gsub("^%S+ ", "")),
+                                                 loc = { X = l.X, Y = l.Y, Z = l.Z }, rot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll } })
+                    if cfg.walkIn then
+                        -- (they walk in: set down a few metres out from their seat, inside the game's range so their AI
+                        -- runs - from afar the game freezes them and a move order did nothing: VM 2026-10-28)
+                        local dx, dy = spot.X - mid.X, spot.Y - mid.Y
+                        local len = math.max(1, math.sqrt(dx * dx + dy * dy))
+                        local from = { X = spot.X + dx / len * cfg.walkFrom, Y = spot.Y + dy / len * cfg.walkFrom, Z = spot.Z }
+                        cat:K2_SetActorLocationAndRotation(from, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                        walking[#walking + 1] = { cat = cat, spot = spot, yaw = yaw }
+                    else
+                        cat:K2_SetActorLocationAndRotation(spot, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
+                        holdAI(cat, true)
+                    end
+                    n = n + 1
+                end)
+            end
+            if hasMe then
+                pcall(function()
+                    local yaw = math.deg(math.atan(mid.Y - place.Y, mid.X - place.X))
+                    pawn:K2_SetActorRotation({ pitch = 0, Yaw = yaw, Roll = 0 }, true)
+                end)
+            end
+        end
+        log("events: groups - %d clanmate(s) placed%s", n, cfg.walkIn and (", " .. #walking .. " walking in") or "")
+        fadeScreen(1, 0, FADE)
+        if #walking == 0 then
+            ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done)
+            return
+        end
+        -- the walk: each cat is walked to its seat by its own character movement - steered there each tick (an AI
+        -- move order did nothing: these cats walk by the game's own move handler, not the navmesh - VM 2026-10-29);
+        -- its behaviour tree paused so it doesn't wander off. Seated = turned to the middle and held. Who isn't there
+        -- after WalkSeconds is set down in its seat.
+        for _, w in ipairs(walking) do
+            pcall(function() w.cat.Controller.BrainComponent:PauseLogic("WaCa gathering") end)
+            pcall(function() w.cat.Controller:StopMovement() end)
+            -- (the camp cats amble at 50 - a pace that took ~6 s for 3 m: they walk over at WalkSpeed, then back to
+            -- their own - VM 2026-10-29)
+            pcall(function()
+                local m = w.cat.CharacterMovement
+                m:SetMovementMode(1, 0)            -- (walking: a cat left held by an interrupted scene couldn't move)
+                w.speed = m.MaxWalkSpeed
+                m.MaxWalkSpeed = math.max(w.speed, cfg.walkSpeed)
+            end)
+        end
+        local started = os.time()
+        local waited, lastReport = 0, 0
+        local function seat(w, snapped)
+            w.seated = true
+            pcall(function() if w.speed then w.cat.CharacterMovement.MaxWalkSpeed = w.speed end end)
+            pcall(function()
+                if snapped then
+                    w.cat:K2_SetActorLocationAndRotation(w.spot, { pitch = 0, Yaw = w.yaw, Roll = 0 }, false, {}, true)
+                else
+                    w.cat:K2_SetActorRotation({ pitch = 0, Yaw = w.yaw, Roll = 0 }, true)
+                end
+            end)
+            holdAI(w.cat, true)
+        end
+        local function check()
+            waited = os.time() - started
+            local left, walked = 0, 0
+            for _, w in ipairs(walking) do
+                if not w.seated then
+                    local ok, d = pcall(function()
+                        local q = w.cat:K2_GetActorLocation()
+                        return math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2)
+                    end)
+                    -- (blocked - by the circle's other cats or yours - for 3 s and 10 ticks (a slow frame rate counts in
+                    -- ticks): the last step is a set-down; the cats got
+                    -- 50-90% of the way and stalled there: VM 2026-10-29)
+                    w.checks = (w.checks or 0) + 1
+                    if ok and (not w.best or d < w.best - 10) then w.best, w.bestAt, w.bestCheck = d, waited, w.checks end
+                    if ok and d <= cfg.walkReach then
+                        seat(w, false)
+                        walked = walked + 1
+                    elseif ok and w.bestAt and waited - w.bestAt >= 3 and w.checks - w.bestCheck >= 10 then
+                        seat(w, true)
+                        w.short = true
+                    else
+                        left = left + 1
+                        -- (its AI controller walks it: a straight move, no navmesh path - movement input does nothing on
+                        -- these cats, and a pathfinding move order never started: VM 2026-10-29)
+                        pcall(function()
+                            local ctl = w.cat.Controller
+                            -- (re-ordered every 5 ticks too: its own walk took it back off between orders - VM 2026-10-29)
+                            if not w.ordered or ctl:GetMoveStatus() == 0 or (w.checks or 0) % 5 == 0 then
+                                ctl:MoveToLocation(w.spot, cfg.walkReach * 0.5, false, false, false, false, nil, true)
+                                w.ordered = true
+                            end
+                        end)
+                    end
+                end
+            end
+            if waited >= (lastReport or 0) + 10 then
+                lastReport = waited
+                local parts = {}
+                for _, w in ipairs(walking) do
+                    if not w.seated then
+                        pcall(function()
+                            local q = w.cat:K2_GetActorLocation()
+                            parts[#parts + 1] = string.format("%.0f", math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2))
+                        end)
+                    end
+                end
+                log("events: groups - walking in, %.0f s: still to go %s", waited, table.concat(parts, " "))
+            end
+            if left > 0 and waited < cfg.walkSeconds then
+                ExecuteInGameThreadWithDelay(100, check)
+                return
+            end
+            local arrived, short, snapped = 0, 0, 0
+            for _, w in ipairs(walking) do
+                if w.short then short = short + 1
+                elseif w.seated then arrived = arrived + 1
+                else seat(w, true) snapped = snapped + 1 end
+            end
+            log("events: groups - %d walked to their seats, %d walked most of the way (blocked, set down), %d set down after %.0f s",
+                arrived, short, snapped, waited)
+            done()
+        end
+        ExecuteInGameThreadWithDelay(500, check)
+    end)
+end
+
 function Events.Release(ctx, done)
     local g = ctx and ctx.gathered
     if not (g and #g > 0) then
@@ -377,15 +738,7 @@ function Events.Release(ctx, done)
     end
     fadeScreen(0, 1, FADE)
     ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
-        for _, e in ipairs(g) do
-            local a = StaticFindObject(e.path)
-            if a and a:IsValid() then
-                stopMontage(a)
-                local ok, err = pcall(function() a:K2_SetActorLocationAndRotation(e.loc, e.rot, false, {}, true) end)
-                if not ok then log("events: release - %s stays: %s", e.path, tostring(err)) end
-                holdAI(a, false)
-            end
-        end
+        putBack(g)
         pcall(function() stopMontage(pc().Pawn) end)
         ctx.gathered = nil
         log("events: release - the clanmates are back in their places")
@@ -512,6 +865,8 @@ local function runStep(s, ctx, nextStep, stop)
         showCard(fill(s.value, ctx), cfg.cardSeconds, nextStep)
     elseif k == "Gather" then
         Events.Gather(tonumber(s.value) or 5, s.who, ctx, nextStep)
+    elseif k == "Groups" then
+        Events.Groups(s.value, s.who, ctx, nextStep)
     elseif k == "Pose" then
         Events.Pose(s.value, s.who, ctx)
         nextStep()
@@ -666,6 +1021,11 @@ function Events.Init(c)
     local ini = WaCa.ReadContent(modDir .. "/config/events.ini", "events") or {}
     local e = ini["Events"] or {}
     cfg.cardSeconds = tonumber(e.CardSeconds or "") or cfg.cardSeconds
+    cfg.walkIn = (e.WalkIn or "1") ~= "0"
+    cfg.walkFrom = tonumber(e.WalkFrom or "") or cfg.walkFrom
+    cfg.walkSeconds = tonumber(e.WalkSeconds or "") or cfg.walkSeconds
+    cfg.walkSpeed = tonumber(e.WalkSpeed or "") or cfg.walkSpeed
+    log("events: %d tie(s) between clan cats (config/relations.ini)", readRelations(modDir))
     cfg.dialogueMax = tonumber(e.DialogueMaxSeconds or "") or cfg.dialogueMax
     -- the runner works with the hour schedule off too (the clan loop, the story): a dialogue's start and end from the
     -- game's sequencer (the WaCa events every mod can use) and its dialogue screens
