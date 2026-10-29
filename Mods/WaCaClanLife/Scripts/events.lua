@@ -515,6 +515,60 @@ local function makeGroups(cats, kind)
     return groups, still
 end
 
+-- the grouping rules checked on a made-up roster (the event WaCaGroupsSelfTest from any mod / the test harness): the
+-- camp's walking cats are often all warriors, so the leader / apprentice rules need a roster that has them. Logs PASS
+-- or FAIL per rule over 20 groupings of each kind; the clan's own ties are left as they were.
+local function groupsSelfTest()
+    local saved = relations
+    relations = { mates = {}, tensions = {}, friends = {} }
+    tie(relations.mates, "Leaderstar", "Matepelt")
+    tie(relations.tensions, "Thornclaw", "Briarfang")
+    local roster = {
+        { name = "Leaderstar", role = "Leader" }, { name = "Matepelt", role = "Warrior" },
+        { name = "Deputyfur", role = "Deputy" }, { name = "Sparrowpaw", role = "Apprentice" },
+        { name = "Mosspaw", role = "Apprentice" }, { name = "Fernpaw", role = "Apprentice" },
+        { name = "Thornclaw", role = "Warrior" }, { name = "Briarfang", role = "Warrior" },
+        { name = "Daisytail", role = "Queen" }, { name = "Pebblekit", role = "Kit" },
+    }
+    local fails = { tension = 0, leader = 0, size = 0 }
+    local appTogether, appTotal = 0, 0
+    for _, kind in ipairs({ "Tongues", "Prey" }) do
+        for _ = 1, 20 do
+            local groups = makeGroups(roster, kind)
+            for _, g in ipairs(groups) do
+                local has = {}
+                for _, m in ipairs(g) do has[m.name] = m end
+                if has.Thornclaw and has.Briarfang then fails.tension = fails.tension + 1 end
+                if has.Leaderstar then
+                    for _, m in ipairs(g) do
+                        if m.name ~= "Leaderstar" and m.name ~= "Matepelt" and m.role ~= "Deputy" then fails.leader = fails.leader + 1 end
+                    end
+                end
+                if #g < 2 or #g > (kind == "Prey" and 4 or 3) then fails.size = fails.size + 1 end
+                local apps = 0
+                for _, m in ipairs(g) do if m.role == "Apprentice" then apps = apps + 1 end end
+                if apps > 0 then
+                    appTotal = appTotal + apps
+                    if apps >= 2 then appTogether = appTogether + apps end
+                end
+            end
+        end
+    end
+    relations = saved
+    local share = appTotal > 0 and appTogether / appTotal or 0
+    log("events: groups self-test - tensions apart: %s (%d broken), leader only with mate / deputy: %s (%d broken), sizes: %s (%d off), apprentices with apprentices: %.0f%% %s",
+        fails.tension == 0 and "PASS" or "FAIL", fails.tension, fails.leader == 0 and "PASS" or "FAIL", fails.leader,
+        fails.size == 0 and "PASS" or "FAIL", fails.size, share * 100, share >= 0.8 and "PASS" or "FAIL")
+    local sample = makeGroups(roster, "Tongues")
+    local lines = {}
+    for i, g in ipairs(sample) do
+        local names = {}
+        for _, m in ipairs(g) do names[#names + 1] = m.name .. " (" .. m.role .. ")" end
+        lines[#lines + 1] = i .. ": " .. table.concat(names, ", ")
+    end
+    log("events: groups self-test - a sample: %s", table.concat(lines, " | "))
+end
+
 function Events.Groups(kind, where, ctx, done)
     kind = (kind == "Prey") and "Prey" or "Tongues"
     local pawn = pc() and pc().Pawn
@@ -1026,6 +1080,10 @@ function Events.Init(c)
     cfg.walkSeconds = tonumber(e.WalkSeconds or "") or cfg.walkSeconds
     cfg.walkSpeed = tonumber(e.WalkSpeed or "") or cfg.walkSpeed
     log("events: %d tie(s) between clan cats (config/relations.ini)", readRelations(modDir))
+    WaCa.On("WaCaGroupsSelfTest", function()
+        local ok, err = pcall(groupsSelfTest)
+        if not ok then log("events: groups self-test failed to run: %s", tostring(err)) end
+    end)
     cfg.dialogueMax = tonumber(e.DialogueMaxSeconds or "") or cfg.dialogueMax
     -- the runner works with the hour schedule off too (the clan loop, the story): a dialogue's start and end from the
     -- game's sequencer (the WaCa events every mod can use) and its dialogue screens
