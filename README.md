@@ -49,6 +49,10 @@ plays.
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
   builds on (rogues attack the camp while half the clan is away...).
+- **The camp's walking cats are its named cats** (`walkers.ini`): the game walks a few nameless cats round camp; each
+  third of the day they wear the camp's named cats in turn (look and name), that cat's placed self hidden meanwhile.
+  Never the key cats (story characters, leader, deputy, medicine cat, the clan's services, queens, kits). Story lever:
+  `Walk:<Name>` = 1 walks next, -1 never.
 - **The clan's own patrols** (`patrols.ini`): clanmates gather in camp and head out to the border together.
 - **New things to say** (`lines.ini`): lines per cat role and time of day, and **dialogue by story day** - a queen says
   one of three lines each day of a week, a new one each day, no repeats until all were said.

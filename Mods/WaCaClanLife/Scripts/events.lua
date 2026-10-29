@@ -450,6 +450,9 @@ end
 -- sidecar WrcGame.<slot>.WaCaCampCats.ini) and given back to the cat at every later load.
 local namesFor
 local function keepCampNames()
+    -- (walkers.lua on: the walkers wear the camp's named cats - nothing of their own to keep)
+    local okW, walkersOn = pcall(function() return require("walkers").On() end)
+    if okW and walkersOn then return end
     local slot = WaCa.CurrentSlot()
     local path = WaCa.SlotFile("WaCaCampCats")
     if not (slot and path) then return end
