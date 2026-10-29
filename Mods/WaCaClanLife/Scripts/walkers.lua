@@ -343,6 +343,17 @@ function Walkers.Turn(why, gen)
     crumb("turn begins")
     removeWalkers()
     for path, m in pairs(movers) do sendHome(path, m) end           -- (the last turn's movers home first)
+    -- (a cat left on the walk animation by a mod reload mid-walk - its walk forgotten: idle again where it stands)
+    local stray = 0
+    for _, q in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+        pcall(function()
+            if q:IsValid() and q.SkeletalMeshComponent:GetAnimationMode() == 1 then
+                playWalk(q, false)
+                stray = stray + 1
+            end
+        end)
+    end
+    if stray > 0 then log("walkers: %d cat(s) left walking by an earlier run - idle again", stray) end
     local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
     local roamers, homebodies, homes = {}, {}, {}
     local p
