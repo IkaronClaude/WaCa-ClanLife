@@ -314,9 +314,11 @@ local function holdAI(cat, on)
         if not (ctl and ctl:IsValid()) then return end
         if on then
             ctl:StopMovement()
-            if pcall(function() ctl.BrainComponent:PauseLogic("WaCa gathering") end) then held[#held + 1] = "brain" end
+            -- (its behaviour tree stopped - PauseLogic didn't: its own pacing kept overriding the walk-in, cats walked
+            -- away from their seats at full speed; StopLogic stops it - VM 2026-10-29)
+            if pcall(function() ctl.BrainComponent:StopLogic("WaCa gathering") end) then held[#held + 1] = "brain" end
         else
-            pcall(function() ctl.BrainComponent:ResumeLogic("WaCa gathering") end)
+            pcall(function() ctl.BrainComponent:RestartLogic() end)
         end
     end)
     pcall(function()
@@ -952,7 +954,7 @@ function Events.Groups(kind, where, ctx, done)
         -- its behaviour tree paused so it doesn't wander off. Seated = turned to the middle and held. Who isn't there
         -- after WalkSeconds is set down in its seat.
         for _, w in ipairs(walking) do
-            pcall(function() w.cat.Controller.BrainComponent:PauseLogic("WaCa gathering") end)
+            pcall(function() w.cat.Controller.BrainComponent:StopLogic("WaCa gathering") end)
             pcall(function() w.cat.Controller:StopMovement() end)
             -- (the camp cats amble at 50 - a pace that took ~6 s for 3 m: they walk over at WalkSpeed, then back to
             -- their own - VM 2026-10-29)
@@ -966,7 +968,14 @@ function Events.Groups(kind, where, ctx, done)
                 m.MaxWalkSpeed = math.max(w.speed, cfg.walkSpeed)
             end)
         end
-        local started = os.time()
+        -- (the game's own clock: it stops with the game and slows with it - at a low frame rate the cats walk in game
+        -- seconds, and a wall-clock limit gave up on cats still on their way: VM 2026-10-29)
+        local statics = StaticFindObject("/Script/Engine.Default__GameplayStatics")
+        local function gameNow()
+            local ok, t = pcall(function() return statics:GetTimeSeconds(pawn) end)
+            return ok and t or os.time()
+        end
+        local started = gameNow()
         local waited, lastReport = 0, 0
         local function seat(w, snapped)
             w.seated = true
@@ -982,7 +991,7 @@ function Events.Groups(kind, where, ctx, done)
             holdAI(w.cat, true)
         end
         local function check()
-            waited = os.time() - started
+            waited = gameNow() - started
             local left, walked = 0, 0
             for _, w in ipairs(walking) do
                 if not w.seated then
@@ -999,6 +1008,12 @@ function Events.Groups(kind, where, ctx, done)
                         seat(w, false)
                         walked = walked + 1
                     elseif ok and w.bestAt and waited - w.bestAt >= 3 and w.checks - w.bestCheck >= 10 then
+                        pcall(function()
+                            local v = w.cat:GetVelocity()
+                            log("events: groups - %s stopped %.0f short of its seat (%s order %s, move status %s, speed %.0f, best %.0f at %.1f s)",
+                                w.cat:GetFName():ToString(), d, w.straight and "straight" or "path", tostring(w.result),
+                                tostring(w.cat.Controller:GetMoveStatus()), math.sqrt(v.X ^ 2 + v.Y ^ 2), w.best, w.bestAt)
+                        end)
                         seat(w, true)
                         w.short = true
                     else
@@ -1009,7 +1024,14 @@ function Events.Groups(kind, where, ctx, done)
                             local ctl = w.cat.Controller
                             -- (re-ordered every 5 ticks too: its own walk took it back off between orders - VM 2026-10-29)
                             if not w.ordered or ctl:GetMoveStatus() == 0 or (w.checks or 0) % 5 == 0 then
-                                w.result = ctl:MoveToLocation(w.spot, cfg.walkReach * 0.5, false, false, false, false, nil, true)
+                                -- (a path round the camp's dens and rocks - in a straight line they pushed against
+                                -- them: VM 2026-10-29; the straight move only if no path is found)
+                                w.result = ctl:MoveToLocation(w.spot, cfg.walkReach * 0.5, false, true, true, false, nil, true)
+                                w.straight = false
+                                if w.result == 0 then
+                                    w.result = ctl:MoveToLocation(w.spot, cfg.walkReach * 0.5, false, false, false, false, nil, true)
+                                    w.straight = true
+                                end
                                 w.ordered = true
                             end
                         end)
@@ -1025,8 +1047,8 @@ function Events.Groups(kind, where, ctx, done)
                             local q = w.cat:K2_GetActorLocation()
                             local status = "?"
                             pcall(function() status = tostring(w.cat.Controller:GetMoveStatus()) end)
-                            parts[#parts + 1] = string.format("%.0f (order %s, moving %s, speed %.0f)",
-                                math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2), tostring(w.result), status,
+                            parts[#parts + 1] = string.format("%.0f (order %s%s, moving %s, speed %.0f)",
+                                math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2), tostring(w.result), w.straight and " straight" or " path", status,
                                 math.sqrt(w.cat:GetVelocity().X ^ 2 + w.cat:GetVelocity().Y ^ 2))
                         end)
                     end
