@@ -351,6 +351,7 @@ function Events.Gather(n, where, ctx, done)
         return done()
     end
     ctx.gathered, ctx.place = {}, place
+    staging = true
     fadeScreen(0, 1, FADE)
     ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
         local held = {}
@@ -383,6 +384,11 @@ function Events.Gather(n, where, ctx, done)
         ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done)
     end)
 end
+
+-- a scene has cats staged (a Groups / Gather step until its Release): other parts wait for it - walkers.lua's turn
+-- changed the walkers' looks and names between the meal and sharing tongues (VM 2026-10-29)
+local staging = false
+function Events.Staging() return staging end
 
 -- the staged cats back where they were (their poses stopped, their AI on again)
 local function putBack(g)
@@ -846,6 +852,7 @@ function Events.Groups(kind, where, ctx, done)
         #apart > 0 and (" | apart: " .. table.concat(apartNames, ", ")) or "")
     local before = ctx.gathered
     ctx.gathered, ctx.place = {}, place
+    staging = true
     fadeScreen(0, 1, FADE)
     local walking = {}
     ExecuteInGameThreadWithDelay(math.floor(FADE * 1000) + 100, function()
@@ -1115,6 +1122,7 @@ end
 function Events.Release(ctx, done)
     local g = ctx and ctx.gathered
     if not ((g and #g > 0) or (ctx and ctx.anchors and #ctx.anchors > 0)) then
+        staging = false
         if done then done() end
         return
     end
@@ -1128,6 +1136,7 @@ function Events.Release(ctx, done)
         ctx.anchors = nil
         pcall(function() stopMontage(pc().Pawn) end)
         ctx.gathered = nil
+        staging = false
         log("events: release - the clanmates are back in their places")
         fadeScreen(1, 0, FADE)
         if done then ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done) end

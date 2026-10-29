@@ -18,6 +18,7 @@ local cfg = { on = false, never = {} }
 local wearing = {}          -- walker path -> { named = named cat path, name = text, hidden = { was hidden, collision } }
 local lastWalked = {}       -- named cat name -> the turn it last walked
 local turn = 0
+local waiting = false
 
 local CUSTOM_KEYS = {
     "ClanType", "Role", "CombatStats", "BodyOffset", "FaceOffset", "FurOffset", "TailOffset", "EarOffset", "EyeOffset",
@@ -96,8 +97,23 @@ local function hide(a, on, was)
 end
 
 -- a turn: every walker wears the named cat whose turn it is
-function Walkers.Turn(why)
+local generation = 0       -- a newer turn cancels a deferred older one (they ran back to back: VM 2026-10-29)
+
+function Walkers.Turn(why, gen)
     if not cfg.on then return end
+    if gen and gen ~= generation then return end
+    -- (not while a scene has cats staged - the meal, sharing tongues: the turn comes once they're let go)
+    local okS, busy = pcall(function() return Events.Staging() end)
+    if okS and busy then
+        if not waiting then log("walkers: the turn (%s) waits - a scene is on", tostring(why)) end
+        waiting = true
+        if not gen then generation = generation + 1 end
+        local mine = generation
+        ExecuteInGameThreadWithDelay(10000, function() pcall(Walkers.Turn, why, mine) end)
+        return
+    end
+    waiting = false
+    generation = generation + 1
     local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
     local walkers = {}
     for _, c in ipairs(FindAllOf("SwtAdventureWalkingNPC") or {}) do
