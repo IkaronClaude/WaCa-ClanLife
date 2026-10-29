@@ -429,6 +429,59 @@ local function clanName(v)
     return clanNames[v]
 end
 
+-- THE CAMP CATS KEEP THEIR NAMES: the game rolls the walking camp cats' names anew at every load (VM 2026-10-29:
+-- Oakpatch, Brookwhisker ... one load, Owlfeather, Rainpelt ... the next), so a tie by name (relations.ini) or a
+-- story beat wouldn't hold. Each walking cat belongs to a placed spawn point (its move handler's SpawnPointRef -
+-- BP_NPC_TargetPoint_C_66 ..., the same every load); the name it had there the first time is kept per save (the
+-- sidecar WrcGame.<slot>.WaCaCampCats.ini) and given back to the cat at every later load.
+local namesFor
+local function keepCampNames()
+    local slot = WaCa.CurrentSlot()
+    local path = WaCa.SlotFile("WaCaCampCats")
+    if not (slot and path) then return end
+    local ini = WaCa.ReadIni(path) or {}
+    local names = ini["Names"] or {}
+    local kept, added, failed, changed = 0, 0, 0, false
+    for _, c in ipairs(FindAllOf("SwtAdventureWalkingNPC") or {}) do
+        pcall(function()
+            local spot = c.QuestMoveComponentHandler.SpawnPointRef
+            if not (spot and spot:IsValid()) then return end
+            local key = spot:GetFName():ToString()
+            local cd = c.MeshCustomizationComponent.CustomData
+            local now = cd.PrefixNameId:ToString() .. "|" .. cd.SuffixNameId:ToString()
+            local saved = names[key]
+            if saved and saved ~= now then
+                local pre, suf = saved:match("^([^|]*)|(.*)$")
+                cd.PrefixNameId = pre
+                cd.SuffixNameId = suf
+                local again = c.MeshCustomizationComponent.CustomData
+                if again.PrefixNameId:ToString() == pre and again.SuffixNameId:ToString() == suf then
+                    kept = kept + 1
+                else
+                    failed = failed + 1
+                end
+            elseif saved then
+                kept = kept + 1
+            else
+                names[key] = now
+                added = added + 1
+                changed = true
+            end
+        end)
+    end
+    if changed then
+        local order = {}
+        for k in pairs(names) do if k ~= "__order" then order[#order + 1] = k end end
+        table.sort(order)
+        names.__order = order
+        WaCa.WriteIni(path, { Names = names, __order = { "Names" } },
+            "; WaCa Clan Life - this save's camp cats: the name each walking cat has at its spawn point (events.lua)")
+    end
+    namesFor = slot
+    log("events: camp cats - %d name(s) kept from this save, %d new%s", kept, added,
+        failed > 0 and (", " .. failed .. " couldn't be given back") or "")
+end
+
 -- a camp cat as the groups see it: its name (the game's own: name ids -> STR_CAT_NAME<n><_SUFFIX>), role and clan
 local function identity(cat)
     local who = { cat = cat }
@@ -478,7 +531,15 @@ local function makeGroups(cats, kind)
     local bigDone = false
     while #pool > 0 do
         local seed = table.remove(pool, 1)
-        local size = (#pool + 1 >= 3 and math.random() < 0.5) and 3 or 2
+        -- (sizes that leave nobody on their own: 4 cats -> 2 + 2, 5 -> 3 + 2, 7 -> 3 + 2 + 2 ...; a 6-cat camp left
+        -- one cat apart with 3 + 3 + 1 - VM 2026-10-29)
+        local r = #pool + 1
+        local size
+        if r <= 3 then size = r
+        elseif r == 4 then size = 2
+        elseif r - 3 == 1 then size = 2
+        elseif r - 2 == 1 then size = 3
+        else size = math.random() < 0.5 and 3 or 2 end
         if kind == "Prey" and not bigDone and #pool + 1 >= 4 and math.random() < 0.35 then size, bigDone = 4, true end
         local g = { seed }
         while #g < size do
@@ -574,6 +635,7 @@ function Events.Groups(kind, where, ctx, done)
     local pawn = pc() and pc().Pawn
     local place = placeOf(where)
     if not (pawn and place) then return done() end
+    if namesFor ~= WaCa.CurrentSlot() then pcall(keepCampNames) end
     local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
     local cats = {}
     for _, c in ipairs(clanmatesNear(place, 40, cfg.gatherRadius)) do
@@ -663,9 +725,16 @@ function Events.Groups(kind, where, ctx, done)
                     if cfg.walkIn then
                         -- (they walk in: set down a few metres out from their seat, inside the game's range so their AI
                         -- runs - from afar the game freezes them and a move order did nothing: VM 2026-10-28)
-                        local dx, dy = spot.X - mid.X, spot.Y - mid.Y
+                        -- (from the open ground round your cat - the meeting place - out to its seat: set down WalkFrom
+                        -- past the seat, half of them landed against the camp's rocks and den walls and never started -
+                        -- VM 2026-10-29. Spread round your cat so they don't start in a heap.)
+                        local dx, dy = spot.X - place.X, spot.Y - place.Y
                         local len = math.max(1, math.sqrt(dx * dx + dy * dy))
-                        local from = { X = spot.X + dx / len * cfg.walkFrom, Y = spot.Y + dy / len * cfg.walkFrom, Z = spot.Z }
+                        local back = math.min(cfg.walkFrom, len - cfg.walkReach)
+                        local side = ((n % 3) - 1) * 60
+                        local from = { X = spot.X - dx / len * back - dy / len * side,
+                                       Y = spot.Y - dy / len * back + dx / len * side, Z = spot.Z }
+                        if back < cfg.walkReach then from = { X = spot.X, Y = spot.Y, Z = spot.Z } end
                         cat:K2_SetActorLocationAndRotation(from, { pitch = 0, Yaw = yaw, Roll = 0 }, false, {}, true)
                         walking[#walking + 1] = { cat = cat, spot = spot, yaw = yaw }
                     else
@@ -750,7 +819,7 @@ function Events.Groups(kind, where, ctx, done)
                             local ctl = w.cat.Controller
                             -- (re-ordered every 5 ticks too: its own walk took it back off between orders - VM 2026-10-29)
                             if not w.ordered or ctl:GetMoveStatus() == 0 or (w.checks or 0) % 5 == 0 then
-                                ctl:MoveToLocation(w.spot, cfg.walkReach * 0.5, false, false, false, false, nil, true)
+                                w.result = ctl:MoveToLocation(w.spot, cfg.walkReach * 0.5, false, false, false, false, nil, true)
                                 w.ordered = true
                             end
                         end)
@@ -764,7 +833,11 @@ function Events.Groups(kind, where, ctx, done)
                     if not w.seated then
                         pcall(function()
                             local q = w.cat:K2_GetActorLocation()
-                            parts[#parts + 1] = string.format("%.0f", math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2))
+                            local status = "?"
+                            pcall(function() status = tostring(w.cat.Controller:GetMoveStatus()) end)
+                            parts[#parts + 1] = string.format("%.0f (order %s, moving %s, speed %.0f)",
+                                math.sqrt((q.X - w.spot.X) ^ 2 + (q.Y - w.spot.Y) ^ 2), tostring(w.result), status,
+                                math.sqrt(w.cat:GetVelocity().X ^ 2 + w.cat:GetVelocity().Y ^ 2))
                         end)
                     end
                 end
@@ -1084,6 +1157,12 @@ function Events.Init(c)
     cfg.walkSeconds = tonumber(e.WalkSeconds or "") or cfg.walkSeconds
     cfg.walkSpeed = tonumber(e.WalkSpeed or "") or cfg.walkSpeed
     log("events: %d tie(s) between clan cats (config/relations.ini)", readRelations(modDir))
+    -- (the camp cats' names: once the world is up - its walking cats spawned - and before any grouping)
+    WaCa.On("ScreenShown", function(screen)
+        if not screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then return end
+        if namesFor == WaCa.CurrentSlot() then return end
+        ExecuteInGameThreadWithDelay(20000, function() pcall(keepCampNames) end)
+    end)
     WaCa.On("WaCaGroupsSelfTest", function()
         local ok, err = pcall(groupsSelfTest)
         if not ok then log("events: groups self-test failed to run: %s", tostring(err)) end

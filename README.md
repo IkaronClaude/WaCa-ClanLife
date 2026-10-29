@@ -64,7 +64,8 @@ folder with `enabled.txt` and a `content` folder, and never edits anyone else's 
 **Scenes** are lines of steps, run one after another, each waiting for its end:
 `Card: <text>`, `Gather: <n> @ Here|Pile` (the camp's nearest walking clanmates, in an arc facing you), `Groups:
 Tongues|Prey` (the clan in small groups by their ties - `config/relations.ini` mates / friends / tensions; the leader
-sits only with its mate or deputy, apprentices together), `Pose: <Sit|Lie|Sleep|Eat|
+sits only with its mate or deputy, apprentices together; the camp's cats keep their names from load to load - the
+game rolls new ones, Clan Life gives each cat back its first name per save), `Pose: <Sit|Lie|Sleep|Eat|
 Sniff|Meow|Play|Groom> @ Gathered|Player|All|<who>` (the game's animations), `Release` (they go back),
 `Dialogue: <id> @ <who>` (the game's own conversations and cinematics - ids in
 `config\events-dialogues.txt`, written the first time you're in the world; who = Deputy, Leader, MedicineCat, Teacher,
