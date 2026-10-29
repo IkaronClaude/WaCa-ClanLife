@@ -69,15 +69,21 @@ local function setUp(why)
     end
     local hunt, patrol = tonumber(get(story, "Hunt") or ""), tonumber(get(story, "Patrol") or "")
     -- the story's activity per slot of the clan's day (MorningDuty = Train, NightDuty = Hunt: a night hunt ...)
-    local kinds
+    local kinds, chances
     for _, slot in ipairs({ "Morning", "Noon", "Evening", "Night" }) do
         local k = get(story, slot .. "Duty") or (slot == "Noon" and get(story, "AfternoonDuty")) or nil
         if k then
             kinds = kinds or {}
             kinds[slot] = k
         end
+        -- (the story day's chances instead of the clan's: MorningDuties = Hunt:3, Patrol:1)
+        local c = get(story, slot .. "Duties")
+        if c then
+            chances = chances or {}
+            chances[slot] = c
+        end
     end
-    if Duties then Duties.Plan(hunt, patrol, kinds) end
+    if Duties then Duties.Plan(hunt, patrol, kinds, chances) end
     if Weather then Weather.SetDay(get(story, "Season"), get(story, "Weather")) end
     log("days: story day %d (%s) - duties hunt %s / patrol %s, season %s, weather %s, advance on %s", story, why,
         tostring(hunt or "by needs"), tostring(patrol or "by needs"), tostring(get(story, "Season") or "by days"),

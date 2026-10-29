@@ -33,7 +33,9 @@ plays.
   **share tongues** - a short staged scene. At **night**, go to your den - your own or your rank's (apprentices',
   warriors' ...) - and your cat lies down and sleeps until morning; or the **night watch** at the camp's entrance. Tasks
   done raise your standing in the clan; missed ones lower it. The clan's day waits while a conversation or cutscene is
-  up (a new game's intro), and its cards come one at a time.
+  up (a new game's intro), and its cards come one at a time. Which task comes is drawn from `duties.ini [Tasks]`
+  chances - a task you just had is less likely next (`RepeatFactor`) - and a story day sets its own (`days.ini`
+  `MorningDuties = Hunt:3, Patrol:1`) or fixes one (`MorningDuty = Hunt`).
 - **The day at a glance**: while the loop runs, a panel like the game's own quest objective (left side of the HUD)
   shows the day and third, your task, where to go and how far along you are ("Prey 1/3"), then how to turn it in
   (`clanlife.ini [Hud]`).
@@ -63,9 +65,10 @@ folder with `enabled.txt` and a `content` folder, and never edits anyone else's 
 
 **Scenes** are lines of steps, run one after another, each waiting for its end:
 `Card: <text>`, `Gather: <n> @ Here|Pile` (the camp's nearest walking clanmates, in an arc facing you), `Groups:
-Tongues|Prey` (the clan in small groups by their ties - `config/relations.ini` mates / friends / tensions; never chance:
-the leader always sits with its mate and deputy unless a story event sets LeaderAway, apprentices together, a group of 4
-round prey only with BigPrey; the camp's cats keep their names from load to load - the
+Tongues|Prey` (the clan in small groups by their ties - `config/relations.ini` mates / pairs / friends / tensions; the
+leader always sits with its mate and deputy unless a story event sets LeaderAway, apprentices together - who with whom by
+chance, the story's levers `Pair: A & B` / `Part: A & B` override it; a group of 4 round prey now and then (BigPrey /
+NoBigPrey force it); the camp's cats keep their names from load to load - the
 game rolls new ones, Clan Life gives each cat back its first name per save), `Pose: <Sit|Lie|Sleep|Eat|
 Sniff|Meow|Play|Groom> @ Gathered|Player|All|<who>` (the game's animations), `Release` (they go back),
 `Dialogue: <id> @ <who>` (the game's own conversations and cinematics - ids in

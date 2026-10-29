@@ -33,7 +33,7 @@ local WaCa, log, DayNight, Events, Days
 local THIRDS = { "Morning", "Noon", "Evening" }
 local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true }
 local COUNTED = { Hunt = true, Patrol = true, Train = true, NightWatch = true }
-local cfg = { on = false, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow = 50, patrolPoints = 2, pilePerPrey = 4,
+local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow = 50, patrolPoints = 2, pilePerPrey = 4,
               companions = 2, companionRadius = 3000,
               train = true, trainMaxRank = "Apprentice", trainBond = 2,
               trainTag = "Gameplay.Combat.Generator.Fixed.TrainingGrounds",
@@ -672,14 +672,38 @@ end
 
 -- the third's task: the story's choice, else picked by weight ([Tasks]) from the clan's needs - hunting counts
 -- PileFactor x when the fresh-kill pile is low, training only up to [Train] MaxRank
+local function weights(text)
+    local out = {}
+    for kind, w in tostring(text):gmatch("(%a+)%s*:%s*([%d%.]+)") do out[kind] = tonumber(w) end
+    return out
+end
+
+-- the picks so far, newest last: { third, kind } - a task the cat just had is less likely next (RepeatFactor per time
+-- in the same third's last RepeatMemory picks, and once more for the third right before; operator 2026-10-29: "our
+-- random pick needs to avoid repeats")
+local picked = {}
+
 local function pickKind(name)
-    if plan and plan.kinds and plan.kinds[name] then return plan.kinds[name] end
+    if plan and plan.kinds and plan.kinds[name] then
+        picked[#picked + 1] = { third = name, kind = plan.kinds[name] }
+        log("duties: %s's task %s - the story day's", name, plan.kinds[name])
+        return plan.kinds[name]
+    end
     local r, rank = ranks()
     local canTrain = cfg.train and not (rank and r[cfg.trainMaxRank] and rank > r[cfg.trainMaxRank])
     local low = pileValue() < cfg.pileLow
     local options, total = {}, 0
-    for kind, weight in pairs(cfg.weights[name] or {}) do
+    -- (the story day's own chances for this third - days.ini <Third>Duties - else the clan's, duties.ini [Tasks])
+    local base = (plan and plan.weights and plan.weights[name]) or cfg.weights[name] or {}
+    local last = picked[#picked]
+    for kind, weight in pairs(base) do
         local x = weight
+        local same = 0
+        for i = #picked, math.max(1, #picked - cfg.repeatMemory * 4 + 1), -1 do
+            if picked[i].third == name and picked[i].kind == kind and same < cfg.repeatMemory then same = same + 1 end
+        end
+        if last and last.kind == kind then same = same + 1 end
+        if same > 0 then x = x * cfg.repeatFactor ^ same end
         if kind == "Hunt" and low then x = x * cfg.pileFactor end
         if kind == "Train" and not canTrain then x = 0 end
         if kind == "Hunt" and plan and plan.hunt == 0 then x = 0 end
@@ -689,13 +713,22 @@ local function pickKind(name)
             total = total + x
         end
     end
-    if total <= 0 then return name == "Night" and "Sleep" or "Free" end
+    local function remember(kind)
+        picked[#picked + 1] = { third = name, kind = kind }
+        while #picked > 40 do table.remove(picked, 1) end
+        local parts = {}
+        for _, o in ipairs(options) do parts[#parts + 1] = string.format("%s %.2f", o[1], o[2]) end
+        log("duties: %s's task %s - chances %s%s", name, kind, table.concat(parts, ", "),
+            (plan and plan.weights and plan.weights[name]) and " (the story day's)" or "")
+        return kind
+    end
+    if total <= 0 then return remember(name == "Night" and "Sleep" or "Free") end
     local roll = math.random() * total
     for _, o in ipairs(options) do
         roll = roll - o[2]
-        if roll <= 0 then return o[1] end
+        if roll <= 0 then return remember(o[1]) end
     end
-    return options[#options][1]
+    return remember(options[#options][1])
 end
 
 local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree, waitingToStart
@@ -1209,8 +1242,33 @@ function Duties.Now()
 end
 -- day scripts (days.lua): the story day's choices (nil = the clan's needs decide) - prey / border points, and a task
 -- per third: { Morning = "Train", Night = "Hunt" (a night hunt) ... }
-function Duties.Plan(hunt, patrol, kinds)
-    plan = (hunt or patrol or (kinds and next(kinds))) and { hunt = hunt, patrol = patrol, kinds = kinds } or nil
+-- the duty levers checked (the event WaCaDutiesSelfTest): a story day's chances win; equal chances repeat seldom
+local function dutiesSelfTest()
+    local savedPlan, savedPicked, savedWeights = plan, picked, cfg.weights.Night
+    picked = {}
+    plan = { weights = { Night = { NightWatch = 1 } } }
+    local storyWins = true
+    for _ = 1, 10 do if pickKind("Night") ~= "NightWatch" then storyWins = false end end
+    plan, picked = nil, {}
+    cfg.weights.Night = { Sleep = 1, NightWatch = 1, Hunt = 1 }
+    local repeats, last = 0, nil
+    for _ = 1, 40 do
+        local k = pickKind("Night")
+        if k == last then repeats = repeats + 1 end
+        last = k
+    end
+    plan, picked, cfg.weights.Night = savedPlan, savedPicked, savedWeights
+    log("duties: self-test - the story day's chances win: %s; equal chances, back-to-back repeats %d of 39 (by pure chance ~13): %s",
+        storyWins and "PASS" or "FAIL", repeats, repeats <= 8 and "PASS" or "FAIL")
+end
+
+function Duties.Plan(hunt, patrol, kinds, chances)
+    local w
+    for slot, text in pairs(chances or {}) do
+        local parsed = weights(text)
+        if next(parsed) then w = w or {} w[slot] = parsed end
+    end
+    plan = (hunt or patrol or (kinds and next(kinds)) or w) and { hunt = hunt, patrol = patrol, kinds = kinds, weights = w } or nil
 end
 function Duties.Today() return today end
 -- for other modules (patrols.lua ...): the camp - { middle = {X,Y,Z}, inside = bool, code = the game's zone } - and N
@@ -1240,14 +1298,13 @@ end
 local function sidecar() return WaCa.SlotFile("WaCaDuties") end
 
 -- "Kind:weight, Kind:weight" -> { Kind = weight }
-local function weights(text)
-    local out = {}
-    for kind, w in tostring(text):gmatch("(%a+)%s*:%s*([%d%.]+)") do out[kind] = tonumber(w) end
-    return out
-end
 
 function Duties.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
+    WaCa.On("WaCaDutiesSelfTest", function()
+        local ok, err = pcall(dutiesSelfTest)
+        if not ok then log("duties: self-test failed to run: %s", tostring(err)) end
+    end)
     Events, Days = c.Events or require("events"), c.Days
     local ini = WaCa.ReadContent(c.modDir .. "/config/duties.ini", "duties") or {}
     local d = ini["Duties"] or {}
@@ -1271,6 +1328,8 @@ function Duties.Init(c)
     local tk = ini["Tasks"] or {}
     for _, name in ipairs({ "Morning", "Noon", "Evening", "Night" }) do
         if (tk[name] or "") ~= "" then cfg.weights[name] = weights(tk[name]) end
+        cfg.repeatFactor = tonumber(tk.RepeatFactor or "") or cfg.repeatFactor
+        cfg.repeatMemory = tonumber(tk.RepeatMemory or "") or cfg.repeatMemory
     end
     cfg.pileFactor = tonumber(tk.PileFactor or "") or cfg.pileFactor
     for kind in pairs(KINDS) do
