@@ -536,6 +536,21 @@ local function myDens()
     return out
 end
 
+-- your clan's leader (its quest actor's narrative role "<Clan>Leader"), or nil
+local function ownLeader()
+    local mine = clanName()
+    if not mine then return nil end
+    for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
+        local found
+        pcall(function()
+            local r = a:IsValid() and a.narrativeRole and roleName(a.narrativeRole)
+            if r and r:find("^" .. mine) and r:find("Leader") then found = a end
+        end)
+        if found then return found end
+    end
+    return nil
+end
+
 local function marker(point)
     local path
     pcall(function()
@@ -884,7 +899,9 @@ local function assign()
         -- leading = giving out the clan's tasks at its meeting place (operator 2026-10-28; the full management UI is a
         -- ticket): the leader's spot in camp, else the camp's middle - marked; the report key there ends the third
         t.lead = true
-        local leader = Events.Who("Leader")
+        -- (your own clan's leader only: Events.Who falls back to any clan's - the marker pointed far off with RiverClan's
+        -- leader right there, operator 2026-10-30)
+        local leader = ownLeader()
         local at = leader and leader:IsValid() and leader:K2_GetActorLocation()
         if not (at and campInside(at)) then at = Duties.Camp().middle end
         if at then
@@ -1130,6 +1147,9 @@ end
 -- a third begins: the clock moves on to it, its beats, then the deputy
 startThird = function(i, why)
     local name = thirdName(i)
+    -- (the last third's markers go with it, however it ended - a third the clock or a rest ended kept its marker and
+    -- its particles in the world until the next morning: operator 2026-10-30, "the particles never despawn")
+    if today.task then cleanup(today.task) end
     today.third, today.stage, today.task, today.leftCamp = i, "start", nil, false
     setClock(name)
     log("duties: day %d - the %s begins (%s)", today.day, name:lower(), why or "the loop")
