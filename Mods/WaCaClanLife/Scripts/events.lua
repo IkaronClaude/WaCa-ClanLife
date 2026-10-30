@@ -14,7 +14,8 @@
 --                                over (the sequencer reports its end / the dialogue screen closes)
 --   Fade: <seconds> / FadeIn: <seconds>   the screen fades to black (and stays) / back - a time skip's cutscene
 --   Wait: <seconds>              a pause
---   Bond: <points> [@ <who>]     the bond with a story cat grows (the game's own AddPersonalBonding)
+--   Bond: <points> [@ <who>]     the bond with a story cat grows (the game's own AddPersonalBonding); with a mod's
+--                                own role (S:<role>) the story variable Bond.<role>
 --   Emit: <event>                WaCa.Emit(event, context) - another mod's WaCa.On handler runs here
 --   Cutscene: <name>             a cutscene of WaCa Cutscenes (its own mod: cats on marks, beats, camera shots);
 --                                waits until it is over (without that mod: goes straight on)
@@ -144,12 +145,46 @@ local ALIAS = { Teacher = "WarriorMoveLearn$" }
 -- the game's story cat with that role; its tables, bonding, parties know it), "S:<name>" = a mod's own string role
 -- (S:warrior_otterstream - bound to a real cat with Events.BindRole; only our layer knows it). A bare name = E.
 local bound = {}             -- "S:name" -> the bound cat's object path
+local castSpecs = {}         -- "S:name" -> who plays it (events.ini [Cast]: a cat's name, a part, E:<role>)
 
 function Events.BindRole(key, cat)
     if type(cat) ~= "string" then cat = cat and (cat:GetFullName():gsub("^%S+ ", "")) end
     bound[key] = cat
     log("events: role %s = %s", key, tostring(cat))
     WaCa.Emit("RoleBound", key, cat)
+    -- (every bound role for other mods - WaCa Cutscenes casts S:<role> from it)
+    WaCa.Publish("roles.cast", bound, true)
+end
+
+-- THE CAST (events.ini [Cast] - and a story pack's content/events.ini - library exercise 2026-10-30: a pack's own roles
+-- without Lua): S:<role> = who plays it - a cat's name as the game shows it (Mossfeather - a WaCa Looks roster cat
+-- too), a part of your clan (Leader, Deputy, MedicineCat ...) or E:<story role>. Bound when the world is up and
+-- again at each third (the cat may not have been about); an unbound one is tried whenever a scene asks for it.
+-- Events.Cast(key) binds one (true when it found its cat), Events.Cast() all of them.
+function Events.Cast(only)
+    local cats = WaCa.Cats and WaCa.Cats() or {}
+    local any = false
+    for key, spec in pairs(castSpecs) do
+        if not only or key == only then
+            local cat
+            local ek, er = Events.Role(spec)
+            if spec:match("^E:") or spec == "Leader" or spec == "Deputy" or spec == "MedicineCat" then
+                cat = Events.Who(spec:match("^E:") and spec or er)
+            else
+                for _, c in ipairs(cats) do
+                    if c.name:lower() == spec:lower() then cat = c.actor break end
+                end
+            end
+            if cat and cat:IsValid() then
+                local path = (cat:GetFullName():gsub("^%S+ ", ""))
+                if bound[key] ~= path then Events.BindRole(key, cat) end
+                any = true
+            elseif not only then
+                log("events: [Cast] %s = %s - no such cat about yet", key, spec)
+            end
+        end
+    end
+    return any
 end
 
 function Events.Role(key)
@@ -164,7 +199,13 @@ function Events.Who(name)
     local kind, role = Events.Role(name)
     if kind == "S" then
         local a = bound[name] and StaticFindObject(bound[name])
-        return a and a:IsValid() and a or nil
+        if a and a:IsValid() then return a end
+        -- (cast in events.ini [Cast] but not bound yet - its cat wasn't about: try now)
+        if castSpecs[name] and Events.Cast(name) then
+            a = StaticFindObject(bound[name])
+            return a and a:IsValid() and a or nil
+        end
+        return nil
     end
     name = role
     local pattern = ALIAS[name] or name
@@ -1333,7 +1374,16 @@ local function runStep(s, ctx, nextStep, stop)
         pcall(function() role = cat and cat.narrativeRole end)
         if type(role) ~= "number" then role = nil end
         local now = role and role > 0 and WaCaNative_AddBond and WaCaNative_AddBond(role, tonumber(s.value) or 1)
-        log("events: bond +%s with %s%s", s.value, s.who or "Nearest", now and "" or " (not a story cat - no bond)")
+        -- a mod's own role (S:<role>) has no bond in the game: it is ours - the story variable Bond.<role>, saved with
+        -- the save and good for If: / Require: (Bond.herbalist >= 4) - library exercise 2026-10-30
+        local own = not now and tostring(s.who or ""):match("^S:(.+)$")
+        if own then
+            local var = "Bond." .. own
+            Events.SetVar(var, (tonumber(Events.Var(var)) or 0) + (tonumber(s.value) or 1))
+            log("events: bond +%s with %s (%s = %s)", s.value, s.who, var, tostring(Events.Var(var)))
+        else
+            log("events: bond +%s with %s%s", s.value, s.who or "Nearest", now and "" or " (not a story cat - no bond)")
+        end
         nextStep()
     elseif k == "Emit" then
         WaCa.Emit(s.value, ctx)
@@ -1494,6 +1544,19 @@ function Events.Init(c)
     cfg.walkSpeed = tonumber(e.WalkSpeed or "") or cfg.walkSpeed
     cfg.bigPreyChance = tonumber(e.BigPreyChance or "") or cfg.bigPreyChance
     log("events: %d tie(s) between clan cats (config/relations.ini)", readRelations(modDir))
+    for _, key in ipairs((ini["Cast"] or {}).__order or {}) do
+        local spec = ini["Cast"][key]
+        if key:match("^S:.+$") and spec and spec ~= "" then castSpecs[key] = spec
+        else log("events: [Cast] %s - only S:<role> = <who> (a mod's own roles)", key) end
+    end
+    if next(castSpecs) then
+        WaCa.On("ScreenShown", function(screen)
+            if screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then
+                ExecuteInGameThreadWithDelay(5000, function() pcall(Events.Cast) end)
+            end
+        end)
+        WaCa.On("ClanThird", function() pcall(Events.Cast) end)
+    end
     -- (the camp cats' names: once the world is up - its walking cats spawned - and before any grouping)
     WaCa.On("ScreenShown", function(screen)
         if not screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then return end

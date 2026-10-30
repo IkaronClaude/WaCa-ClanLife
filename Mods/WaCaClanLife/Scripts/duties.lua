@@ -565,6 +565,17 @@ local function ownLeader()
     return best
 end
 
+-- THE WORLD MAP (mapmarks.lua): each duty's spot gets its mark - the meeting place cyan (MEET_COLOR), the hunting
+-- ground green, the patrol's border points orange, your den lavender (operator 2026-10-30: "a cyan map marker for it,
+-- etc.")
+local MARK_HUNT = { R = 0.45, G = 0.9, B = 0.2, A = 1 }
+local MARK_PATROL = { R = 1.0, G = 0.55, B = 0.1, A = 1 }
+local MARK_DEN = { R = 0.7, G = 0.6, B = 1.0, A = 1 }
+local function mapMark(id, at, color, label)
+    pcall(function() require("mapmarks").Set(id, at, color, label) end)
+end
+local function mapClear(id) pcall(function() require("mapmarks").Clear(id) end) end
+
 -- the meeting place's interactable: the game's generic interactable (BP_Interactable_CInematic - no cinematic set,
 -- its editor placeholder mesh hidden), so the game itself shows "Interact" when your cat is near (VM 2026-10-30: the
 -- cinematic interactable prompts wherever it is spawned; the placed rocks / sunspots don't, or go on cooldown)
@@ -896,14 +907,16 @@ end
 local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree, waitingToStart
 
 local function cleanup(t)
-    if t.ground then removeMarker(t.ground) end
-    for _, pt in ipairs(t.points or {}) do
+    if t.ground then removeMarker(t.ground) mapClear("hunt") end
+    for i, pt in ipairs(t.points or {}) do
+        mapClear("patrol" .. i)
         removeMarker(pt)
         removeArea(pt.area)
     end
     removeArea(t.area)
     if t.guardMarker then removeMarker({ marker = t.guardMarker }) end
     if t.nestMarker then removeMarker({ marker = t.nestMarker }) end
+    if t.denMarker then mapClear("den") end
     if t.meetMarker then removeMarker({ marker = t.meetMarker }) end
     if t.meetSpot then removeMarker({ marker = t.meetSpot }) end
     if t.meetSpot then require("mapmarks").Clear("meeting") end
@@ -959,6 +972,7 @@ local function setUp(kind)
         t.need = math.max(1, (plan and plan.hunt) or (pileValue() < cfg.pileLow and cfg.huntMax or math.random(cfg.huntMin, cfg.huntMax)))
         t.got = 0
         if cfg.huntingGround then t.ground = huntingGround() end
+        if t.ground then mapMark("hunt", t.ground, MARK_HUNT, "Hunting ground: " .. (t.ground.kind or "prey")) end
     elseif kind == "Patrol" then
         t.points = patrolPoints((plan and plan.patrol) or cfg.patrolPoints)
         if #t.points == 0 then
@@ -966,6 +980,7 @@ local function setUp(kind)
             t.kind, t.points = "Free", nil
         else
             for i, pt in ipairs(t.points) do
+                mapMark("patrol" .. i, pt, MARK_PATROL, "Border point " .. i)
                 pt.area = placeArea(pt, { X = cfg.reach, Y = cfg.reach, Z = 1000 }, 0, function(entering)
                     if entering then reached(t, "point", i) end
                 end)
@@ -994,6 +1009,7 @@ local function setUp(kind)
         show = show or t.dens[1]
         if show then
             t.denMarker = marker(show.door)
+            mapMark("den", show.door, MARK_DEN, show.title .. ": sleep")
             log("duties: %d den(s) to sleep in - marked: %s", #t.dens, show.title)
         end
         local nest, where = findNest()

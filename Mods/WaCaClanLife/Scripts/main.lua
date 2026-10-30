@@ -76,5 +76,7 @@ require("gathering").Init(ctx({ Events = Events, Days = Days, DayNight = DayNigh
 -- the day at a glance on the HUD (clanlife.ini [Hud])
 require("hud").Init(ctx({}))
 require("mapmarks").Init(ctx({}))
+-- clanmates comment on your hunts (lines.ini [Hunt])
+require("huntlines").Init(ctx({}))
 
 WaCa.Ready()
