@@ -82,9 +82,9 @@ function Exhaustion.Init(c)
     -- (the end screen also shows while a world loads - only a fight whose popup opened counts)
     local lastFight, inFight = -100, false
     local function fought()
-        if not inFight or os.clock() - lastFight < 5 then return end
+        if not inFight or WaCa.Now() - lastFight < 5 then return end
         inFight = false
-        lastFight = os.clock()
+        lastFight = WaCa.Now()
         did(cfg.perFight, "a fight")
     end
     WaCa.Watch("EndCombat", "/Script/SwtAdventure.SwtAdventureCombatManager", "WaCaTiredFight", "post")

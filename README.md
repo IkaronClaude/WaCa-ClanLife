@@ -49,6 +49,11 @@ plays.
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
   builds on (rogues attack the camp while half the clan is away...).
+- **Your party goes with you** (`walkers.ini [Party]`): the cats on the pause menu's PARTY page leave camp with you and
+  run alongside your cat (walk / trot / run to keep up, the ground followed), hold back while you sneak, are set down
+  beside you when they fall far behind or get stuck, and walk back to their spots when you come into camp. They are the
+  ones who comment on your hunts. (The party is read off the PARTY page once the game has filled it - open the pause
+  menu once per session.)
 - **The camp's named cats move about** (`walkers.ini`): the game's nameless walking cats are taken out; instead, each
   third of the day a few of the camp's named cats move (the ones that moved longest ago first), on the game's own walk
   animation, following the ground. Plain warriors, apprentices and elders roam across camp (a den's front, the
@@ -102,7 +107,7 @@ They go in at the loop's hook points:
 **Your own roles** (`events.ini [Cast]`): `S:<role> = <who>` - a cat's name as the game shows it (a WaCa Looks roster
 cat too), a part (`Leader`, `Deputy`, `MedicineCat`) or `E:<story role>`. Bound once that cat is about (tried again
 every 10 s till then); scenes, cutscenes and `Bond: 2 @ S:<role>` (story variable `Bond.<role>`) use it.
-**Hunt comments** (`lines.ini [Hunt]`): after you catch or miss prey the nearest clanmate says `Caught1...` /
+**Hunt comments** (`lines.ini [Hunt]`): after you catch or miss prey a party mate (else the nearest clanmate; `Who = Party`: party only) says `Caught1...` /
 `Missed1...` (`{PLAYER}`, `{PREY}`) - shown by WaCa Cutscenes. The world map marks the hunting ground, the border
 points and the den of your task, and the meeting place.
 **A complete example**: [examples/WaCaStoryPackExample](examples/WaCaStoryPackExample) - a custom cat, a role, a

@@ -67,8 +67,8 @@ local function card(text) Events.Card(text, cfg.seconds) end
 -- a card for a key press that did nothing yet (at most one every 4 s: a held key repeats)
 local lastFeedback = 0
 local function feedback(text)
-    if os.clock() - lastFeedback < 4 then return end
-    lastFeedback = os.clock()
+    if WaCa.Now() - lastFeedback < 4 then return end
+    lastFeedback = WaCa.Now()
     card(text)
 end
 
@@ -1308,6 +1308,9 @@ end
 onCamp = function(entering)
     if entering ~= camp.inside then log("duties: your cat %s the camp", entering and "walks into" or "leaves") end
     camp.inside = entering
+    -- (the step check's last answer follows: after a teleport in - the zone told, the steps never saw camp - walking out
+    -- read "out" again, no change, and no CampLeft came: the party never set off, VM 2026-10-30)
+    camp.stepInside = entering
     if entering then camp.entry = playerPos() end
     if today and not entering then today.leftCamp = true end
     WaCa.Emit(entering and "CampEntered" or "CampLeft", today and today.day, today and thirdName())
@@ -1408,9 +1411,9 @@ end
 -- screen also shows while a world loads - only a fight whose popup opened counts): a running spar counts
 local lastFight, inFight = -100, false
 local function fightOver()
-    if not inFight or os.clock() - lastFight < 5 then return end
+    if not inFight or WaCa.Now() - lastFight < 5 then return end
     inFight = false
-    lastFight = os.clock()
+    lastFight = WaCa.Now()
     local t = today and today.task
     if not (t and t.kind == "Train" and t.fighting) then return end
     t.fighting = false

@@ -115,6 +115,23 @@ function Follow.Group(cats, leader, opts)
     return g
 end
 
+-- the cats following a leader (every group it leads), as actors
+function Follow.Followers(leader)
+    local l = actor(leader)
+    local lp = l and pathOf(l)
+    local out = {}
+    if not lp then return out end
+    for _, g in pairs(groups) do
+        if g.leader == lp then
+            for _, path in ipairs(g.cats) do
+                local a = StaticFindObject(path)
+                if a and a:IsValid() then out[#out + 1] = a end
+            end
+        end
+    end
+    return out
+end
+
 function Follow.Travel(cats, place, opts, onArrive)
     local g = newGroup(cats, opts)
     g.place, g.onArrive = place, onArrive
