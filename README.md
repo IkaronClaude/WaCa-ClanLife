@@ -54,7 +54,7 @@ plays.
   animation, following the ground. Plain warriors, apprentices and elders roam across camp (a den's front, the
   fresh-kill pile, the meeting place, another cat's spot) and come home; cats with a part (trainer, medicine cat,
   leader, deputy, queens, kits, story cats) only step over to a nearby spot and back. Talking to a cat stops it (the
-  others hold too); nobody moves while a menu or scene is up. In the evening's groups the named cats walk to their
+  others hold too); nobody moves while a menu, scene or cutscene is up. In the evening's groups the named cats walk to their
   seats and home again. Story lever: `Walk:<Name>` = 1 moves next, -1 never.
   For other mods: the `WalkerMoves` event (name, actor path, `home`/`away`) when a cat sets off, `WalkerWalkTo`
   (actor path, X, Y, Z: that cat walks there, stays a while, walks home), and `PlayScene`
@@ -83,7 +83,9 @@ game rolls new ones, Clan Life gives each cat back its first name per save), `Po
 Sniff|Meow|Play|Groom> @ Gathered|Player|All|<who>` (the game's animations), `Release` (they go back),
 `Dialogue: <id> @ <who>` (the game's own conversations and cinematics - ids in
 `config\events-dialogues.txt`, written the first time you're in the world; who = Deputy, Leader, MedicineCat, Teacher,
-Nearest or a story role), `Fade: <s>` / `FadeIn: <s>`, `Wait: <s>`, `Bond: <points> @ <who>`, `Emit: <event>`,
+Nearest or a story role), `Cutscene: <name>` (a cutscene of
+**[WaCa Cutscenes](https://github.com/IkaronClaude/WaCa-Cutscenes)** - cats on marks, beats, camera shots; the scene
+waits for its end, and without that mod goes straight on), `Fade: <s>` / `FadeIn: <s>`, `Wait: <s>`, `Bond: <points> @ <who>`, `Emit: <event>`,
 `Hook: <name>`, and story variables kept with the save: `Set: LeaderFavour = 2`, `Add: GatheringBan 1`,
 `If: LeaderFavour >= 5, Rank >= 2` (the rest of the scene only then).
 

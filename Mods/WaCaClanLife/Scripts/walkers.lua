@@ -30,6 +30,7 @@ local generation = 0
 local roleCache, clanCache, giverCache = {}, {}, {}
 local hiddenWalkers = {}
 local talkingSince          -- os.time() a conversation began (nil: none) - every mover holds while it's on
+local cutsceneSince         -- os.time() a cutscene (WaCa Cutscenes) began - the same: its cats are its cast's
 
 -- (DIAGNOSTIC, temporary: a flushed breadcrumb before every engine call - a crash in the game's own code named no
 -- caller, VM 2026-10-29. walkers.ini Trace = 1.)
@@ -203,7 +204,11 @@ local function tick()
         log("walkers: no end of the conversation seen in 5 min - moving again")
         talkingSince = nil
     end
-    menu = menu or talkingSince ~= nil
+    if cutsceneSince and os.time() - cutsceneSince > 600 then
+        log("walkers: no end of the cutscene seen in 10 min - moving again")
+        cutsceneSince = nil
+    end
+    menu = menu or talkingSince ~= nil or cutsceneSince ~= nil
     local paused = menu
     pcall(function() paused = paused or Events.Staging() end)
     for path, m in pairs(movers) do
@@ -331,7 +336,7 @@ function Walkers.Turn(why, gen)
     if gen and gen ~= generation then return end
     -- (not before the world is up: the session's first turn ran while the level loaded - the nameless cats taken out
     -- half-built - and the game crashed, VM 2026-10-29)
-    local busy = not inWorld or (WaCa.InMenu and WaCa.InMenu())
+    local busy = not inWorld or (WaCa.InMenu and WaCa.InMenu()) or cutsceneSince ~= nil
     pcall(function() busy = busy or Events.Staging() end)
     if busy then
         if not gen then generation = generation + 1 end
@@ -592,6 +597,15 @@ function Walkers.Init(c)
     WaCa.On("DialogueStarted", function() if not talkingSince then pcall(talkBegins) end end)
     WaCa.On("SequenceEnded", function() talkEnds("its sequence ended") end)
     WaCa.On("SequenceFinished", function() talkEnds("its sequence finished") end)
+    -- (a cutscene: every mover holds where it is - the cutscene moves its cast and puts them back where they were)
+    WaCa.On("CutsceneStarted", function(name)
+        cutsceneSince = os.time()
+        log("walkers: cutscene %s - every cat holds", tostring(name))
+    end)
+    WaCa.On("CutsceneEnded", function()
+        if cutsceneSince then log("walkers: the cutscene is over - moving again") end
+        cutsceneSince = nil
+    end)
     -- (other mods: send a named cat somewhere now - it walks there, stays a while and walks home: actor path, X, Y, Z)
     WaCa.On("WalkerWalkTo", function(path, x, y, z)
         ExecuteInGameThread(function()

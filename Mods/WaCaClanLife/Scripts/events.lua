@@ -16,6 +16,8 @@
 --   Wait: <seconds>              a pause
 --   Bond: <points> [@ <who>]     the bond with a story cat grows (the game's own AddPersonalBonding)
 --   Emit: <event>                WaCa.Emit(event, context) - another mod's WaCa.On handler runs here
+--   Cutscene: <name>             a cutscene of WaCa Cutscenes (its own mod: cats on marks, beats, camera shots);
+--                                waits until it is over (without that mod: goes straight on)
 --   Hook: <name>                 BLOCKING: every function registered with Events.Hook(name, fn) runs in turn as
 --                                fn(context, continue) and calls continue() when its part is over (a mod's own
 --                                cutscene, a minigame, a choice ...)
@@ -45,6 +47,8 @@ local restoredFor
 local listed = false
 local hooks = {}                 -- Hook: name -> { fn, ... }
 local waiting                    -- the dialogue step waiting for its end: { started, done = fn }
+local cutsceneWait               -- the cutscene step waiting for its end: { name, state, done = fn }
+local cutsceneOn = false         -- a cutscene (WaCa Cutscenes) is playing: cards wait for it
 local gen = 0
 
 local function pc()
@@ -65,7 +69,7 @@ local function nextCard()
     end
     cards.showing = true
     -- (not over a conversation, a cutscene or a menu: the card waits for it)
-    if WaCa.InMenu() then
+    if WaCa.InMenu() or cutsceneOn then
         ExecuteInGameThreadWithDelay(1000, nextCard)
         return
     end
@@ -1346,6 +1350,25 @@ local function runStep(s, ctx, nextStep, stop)
             end
         end
         nextHook()
+    elseif k == "Cutscene" then
+        -- (WaCa Cutscenes plays it; the scene goes on when it's over - or at once when that mod isn't there to start it)
+        local name = tostring(s.value)
+        local state = { started = false, over = false }
+        local function over()
+            if state.over then return end
+            state.over = true
+            if cutsceneWait and cutsceneWait.state == state then cutsceneWait = nil end
+            nextStep()
+        end
+        cutsceneWait = { name = name, state = state, done = over }
+        WaCa.Emit("PlayCutscene", name)
+        log("events: cutscene %s", name)
+        after(cfg.startWait, function()
+            if not state.started and not state.over then
+                log("events: cutscene %s never started (WaCa Cutscenes not installed?) - going on", name)
+                over()
+            end
+        end)
     elseif k == "Dialogue" then
         local ok, err = pcall(function()
             local mgr = FindFirstOf("SwtQuestSequencerManager")
@@ -1490,6 +1513,22 @@ function Events.Init(c)
         end
         log("events: a scene asked for - %d step(s): %s", #steps, tostring(text))
         if #steps > 0 then ExecuteInGameThread(function() Events.Play(steps) end) end
+    end)
+    -- (WaCa Cutscenes: one playing holds the cards; the Cutscene step goes on when its own is over)
+    WaCa.On("CutsceneStarted", function(name)
+        cutsceneOn = true
+        if cutsceneWait and cutsceneWait.name == tostring(name) then cutsceneWait.state.started = true end
+    end)
+    -- (queued behind another one: it will play - not "never started")
+    WaCa.On("CutsceneQueued", function(name)
+        if cutsceneWait and cutsceneWait.name == tostring(name) then cutsceneWait.state.started = true end
+    end)
+    WaCa.On("CutsceneEnded", function(name, why)
+        cutsceneOn = false
+        if cutsceneWait and cutsceneWait.name == tostring(name) then
+            log("events: cutscene %s is over (%s)", tostring(name), tostring(why))
+            ExecuteInGameThread(function() if cutsceneWait then cutsceneWait.done() end end)
+        end
     end)
     WaCa.On("WaCaGroupsSelfTest", function()
         local ok, err = pcall(groupsSelfTest)
