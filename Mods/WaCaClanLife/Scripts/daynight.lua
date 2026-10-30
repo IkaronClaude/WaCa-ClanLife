@@ -174,6 +174,25 @@ function DayNight.Freeze(source, on)
 end
 function DayNight.Frozen() return frozen() end
 
+-- THE STORY'S SCENES stop the clock while they play (tickets.md "Time freezes at story points", operator 2026-10-28:
+-- questing must not happen under time pressure): the game's own sequences and conversations, WaCa Cutscenes' cutscenes
+-- - each its own freeze, lifted at its end (and after 5 minutes at the latest: an end that never came must not stop
+-- the clan's day for good). Scenes in the story files freeze with their Freeze step.
+local sceneGen = {}
+local function sceneFreeze(source, on)
+    DayNight.Freeze(source, on)
+    if on then
+        sceneGen[source] = (sceneGen[source] or 0) + 1
+        local mine = sceneGen[source]
+        ExecuteInGameThreadWithDelay(300000, function()
+            if sceneGen[source] == mine and freezes[source] then
+                log("daynight: no end of the %s seen in 5 min - time runs again", source)
+                DayNight.Freeze(source, false)
+            end
+        end)
+    end
+end
+
 -- the clan sim takes the clock: from now on only DayNight.Advance moves it; days start (and end) at dayStart
 function DayNight.Drive(dayStart)
     if not cfg.on then return false end
@@ -264,6 +283,17 @@ function DayNight.Init(c)
         end)
         return
     end
+    -- (the story's scenes stop the clock - see sceneFreeze)
+    WaCa.On("SequenceStarted", function() sceneFreeze("sequence", true) end)
+    WaCa.On("SequenceEnded", function() sceneFreeze("sequence", false) end)
+    WaCa.On("SequenceFinished", function() sceneFreeze("sequence", false) end)
+    WaCa.On("DialogueStarted", function() sceneFreeze("conversation", true) end)
+    WaCa.On("ScreenHidden", function(screen)
+        local ok, name = pcall(function() return screen:GetClass():GetFName():ToString() end)
+        if ok and name:find("^WBP_QuestGiver_Dialogue") then sceneFreeze("conversation", false) end
+    end)
+    WaCa.On("CutsceneStarted", function() sceneFreeze("cutscene", true) end)
+    WaCa.On("CutsceneEnded", function() sceneFreeze("cutscene", false) end)
     WaCa.On("GameSaved", function()
         restore()
         keep()

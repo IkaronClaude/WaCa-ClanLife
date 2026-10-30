@@ -1317,8 +1317,15 @@ onCamp = function(entering)
 end
 
 -- a third begins: the clock moves on to it, its beats, then the deputy
+local pendingThird               -- a third that waits for time to run again: { i, why }
 startThird = function(i, why)
     local name = thirdName(i)
+    -- (time stands still - a story point, a scene: the next third waits for it, so the clan's day and the sky never part)
+    if DayNight.Frozen and DayNight.Frozen() and DayNight.Hour() then
+        if not pendingThird then log("duties: the %s waits - time stands still", name:lower()) end
+        pendingThird = { i, why }
+        return
+    end
     -- (the last third's markers go with it, however it ended - a third the clock or a rest ended kept its marker and
     -- its particles in the world until the next morning: operator 2026-10-30, "the particles never despawn")
     if today.task then cleanup(today.task) end
@@ -1588,6 +1595,13 @@ local function sidecar() return WaCa.SlotFile("WaCaDuties") end
 
 function Duties.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
+    WaCa.On("TimeFrozen", function(frozen)
+        if frozen or not pendingThird then return end
+        local p = pendingThird
+        pendingThird = nil
+        log("duties: time runs again - the %s begins", thirdName(p[1]):lower())
+        ExecuteInGameThread(function() pcall(startThird, p[1], p[2]) end)
+    end)
     WaCa.On("WaCaDutiesSelfTest", function()
         local ok, err = pcall(dutiesSelfTest)
         if not ok then log("duties: self-test failed to run: %s", tostring(err)) end

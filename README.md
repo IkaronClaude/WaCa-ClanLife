@@ -93,7 +93,8 @@ Sniff|Meow|Play|Groom> @ Gathered|Player|All|<who>` (the game's animations), `Re
 `config\events-dialogues.txt`, written the first time you're in the world; who = Deputy, Leader, MedicineCat, Teacher,
 Nearest or a story role), `Cutscene: <name>` (a cutscene of
 **[WaCa Cutscenes](https://github.com/IkaronClaude/WaCa-Cutscenes)** - cats on marks, beats, camera shots; the scene
-waits for its end, and without that mod goes straight on), `Fade: <s>` / `FadeIn: <s>`, `Wait: <s>`, `Bond: <points> @ <who>`, `Emit: <event>`,
+waits for its end, and without that mod goes straight on), `Fade: <s>` / `FadeIn: <s>`, `Wait: <s>`, `Freeze: On` / `Freeze: Off` (a story point: the clan's clock stands still
+and its next third waits - the game's own scenes and cutscenes stop it by themselves), `Bond: <points> @ <who>`, `Emit: <event>`,
 `Hook: <name>`, and story variables kept with the save: `Set: LeaderFavour = 2`, `Add: GatheringBan 1`,
 `If: LeaderFavour >= 5, Rank >= 2` (the rest of the scene only then).
 

@@ -1374,6 +1374,14 @@ local function runStep(s, ctx, nextStep, stop)
     elseif k == "Pose" then
         Events.Pose(s.value, s.who, ctx)
         nextStep()
+    elseif k == "Freeze" then
+        -- (a story point - tickets.md "Time freezes at story points": Freeze: On ... Freeze: Off - the clan's clock
+        -- stands still and its next third waits; questing at a story point is never under time pressure)
+        local v = tostring(s.value or ""):lower()
+        local on = v == "on" or v == "1" or v == "yes"
+        pcall(function() require("daynight").Freeze("story", on) end)
+        log("events: time %s (a Freeze step)", on and "stands still" or "runs again")
+        nextStep()
     elseif k == "Release" then
         Events.Release(ctx, nextStep)
     elseif k == "Wait" then
