@@ -99,6 +99,15 @@ They go in at the loop's hook points:
 - `lines.ini` `[Dialogue.<Name>]` `Who` / `Days` / `Require` / `Case = Talk | Patrol` / `Line1...` (a grab bag: a new
   line each day, no repeats until all came).
 
+**Your own roles** (`events.ini [Cast]`): `S:<role> = <who>` - a cat's name as the game shows it (a WaCa Looks roster
+cat too), a part (`Leader`, `Deputy`, `MedicineCat`) or `E:<story role>`. Bound once that cat is about (tried again
+every 10 s till then); scenes, cutscenes and `Bond: 2 @ S:<role>` (story variable `Bond.<role>`) use it.
+**Hunt comments** (`lines.ini [Hunt]`): after you catch or miss prey the nearest clanmate says `Caught1...` /
+`Missed1...` (`{PLAYER}`, `{PREY}`) - shown by WaCa Cutscenes. The world map marks the hunting ground, the border
+points and the den of your task, and the meeting place.
+**A complete example**: [examples/WaCaStoryPackExample](examples/WaCaStoryPackExample) - a custom cat, a role, a
+cutscene and a clan event, no code.
+
 Built-in variables: `Day`, `Rank`, `Standing`, `Gathering.Chosen`, `Gathering.Count`. The order of a third's end:
 story beats (100), clan events (200 - `Order =`), `<Third>After` beats (300), the third's own event (350), the
 `ClanThirdEnd` hook (400) - so a story scene can come before or after the clan eats together.

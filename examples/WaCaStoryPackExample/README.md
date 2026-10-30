@@ -5,7 +5,7 @@ things a writer adds most:
 
 | File | What it adds | Read by |
 | --- | --- | --- |
-| `content\roster.ini` | a **custom cat**: the first RiverClan warrior becomes *Mossfeather* (name and coat) | WaCa Looks |
+| `content\roster.ini` | a **custom cat**: Troutwing, a RiverClan warrior, becomes *Mossfeather* (name and coat) | WaCa Looks |
 | `content\events.ini` | a **custom role**: `S:herbalist`, played by Mossfeather | WaCa Clan Life (`[Cast]`) |
 | `content\cutscenes.ini` | a **custom cutscene**: `HerbLesson`, the herbalist and your cat | WaCa Cutscenes |
 | `content\clanevents.ini` | a **clan event** that plays it some mornings and adds bond | WaCa Clan Life |

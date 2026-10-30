@@ -146,6 +146,8 @@ local ALIAS = { Teacher = "WarriorMoveLearn$" }
 -- (S:warrior_otterstream - bound to a real cat with Events.BindRole; only our layer knows it). A bare name = E.
 local bound = {}             -- "S:name" -> the bound cat's object path
 local castSpecs = {}         -- "S:name" -> who plays it (events.ini [Cast]: a cat's name, a part, E:<role>)
+local castMissed = {}        -- "S:name" -> true once its miss was logged (the retries stay quiet)
+local castRetrying = false
 
 function Events.BindRole(key, cat)
     if type(cat) ~= "string" then cat = cat and (cat:GetFullName():gsub("^%S+ ", "")) end
@@ -179,8 +181,21 @@ function Events.Cast(only)
                 local path = (cat:GetFullName():gsub("^%S+ ", ""))
                 if bound[key] ~= path then Events.BindRole(key, cat) end
                 any = true
-            elseif not only then
-                log("events: [Cast] %s = %s - no such cat about yet", key, spec)
+            elseif not only and not castMissed[key] then
+                castMissed[key] = true
+                log("events: [Cast] %s = %s - no such cat about yet (tried again every 10 s till it is)", key, spec)
+            end
+        end
+    end
+    -- (a cat of a camp you're far from isn't in the world yet - VM 2026-10-30: the pack's herbalist went uncast till the
+    -- next third after the player walked into camp; so an unbound role is tried again while it is unbound)
+    if not only and not castRetrying then
+        for key in pairs(castSpecs) do
+            local a = bound[key] and StaticFindObject(bound[key])
+            if not (a and a:IsValid()) then
+                castRetrying = true
+                ExecuteInGameThreadWithDelay(10000, function() castRetrying = false; pcall(Events.Cast) end)
+                break
             end
         end
     end
