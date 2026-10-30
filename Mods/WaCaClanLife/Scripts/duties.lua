@@ -64,6 +64,13 @@ end
 
 -- (one queue for every card of the mod - events.lua: never two on screen at once)
 local function card(text) Events.Card(text, cfg.seconds) end
+-- a card for a key press that did nothing yet (at most one every 4 s: a held key repeats)
+local lastFeedback = 0
+local function feedback(text)
+    if os.clock() - lastFeedback < 4 then return end
+    lastFeedback = os.clock()
+    card(text)
+end
 
 local function ranks()
     local out = {}
@@ -536,20 +543,54 @@ local function myDens()
     return out
 end
 
--- your clan's leader (its quest actor's narrative role "<Clan>Leader"), or nil
+-- your clan's leader: the story cat whose narrative role is a leader's (the game names them by their story -
+-- RiverClan's is TheMistrustfulLeader, not "RiverClanLeader": the old match found none, operator 2026-10-30) and whose
+-- own ClanType (AQuestBaseActor.ClanType, the game's) is your cat's clan; nil when there is none
 local function ownLeader()
     -- (your cat's own ClanType - read from the game; nil only before a cat is loaded)
     local mine = clanName()
     if not mine then log("duties: your cat's clan couldn't be read - no cat loaded?") return nil end
+    -- (the same role is on a scenery filler too - BP_Quest_Filler_C, parked where nobody sees it: VM 2026-10-30, the
+    -- meeting place 14 m from the Lionstar standing in camp. The cat you meet is the one available for quests.)
+    local clans = enumNames("/Script/SwtQuest.EClanType")
+    local best, bestScore
     for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
-        local found
         pcall(function()
             local r = a:IsValid() and a.narrativeRole and roleName(a.narrativeRole)
-            if r and r:find("^" .. mine) and r:find("Leader") then found = a end
+            if not (r and r:find("Leader") and clans[a.ClanType] == mine) then return end
+            local score = (a.bIsAvailableForQuest and 2 or 0) + (a:GetClass():GetFName():ToString():find("Filler") and 0 or 1)
+            if not bestScore or score > bestScore then best, bestScore = a, score end
         end)
-        if found then return found end
     end
-    return nil
+    return best
+end
+
+-- the meeting place's interactable: the game's generic interactable (BP_Interactable_CInematic - no cinematic set,
+-- its editor placeholder mesh hidden), so the game itself shows "Interact" when your cat is near (VM 2026-10-30: the
+-- cinematic interactable prompts wherever it is spawned; the placed rocks / sunspots don't, or go on cooldown)
+local MEET_REACH = 250
+local SPOT = "/Game/Gameplay/Blueprints/WorldElements/Interactables/BP_Interactable_CInematic.BP_Interactable_CInematic_C"
+local function meetingSpot(point)
+    local path
+    pcall(function()
+        local a = pc().Pawn:GetWorld():SpawnActor(WaCa.LoadAsset(SPOT), point, { pitch = 0, Yaw = 0, Roll = 0 })
+        pcall(function() a.StaticMeshComponent:SetVisibility(false, false) end)
+        -- (its own interaction sphere is 50 cm - the prompt showed only standing on it: 2.5 m around your leader, VM)
+        pcall(function() a.InteractionComponents[1]:SetSphereRadius(MEET_REACH, true) end)
+        path = pathOf(a)
+    end)
+    return path
+end
+
+-- how near counts as at the spot: its own interaction shape (what the game prompts by)
+local function spotReach(a)
+    local r
+    pcall(function()
+        local c = a.InteractionComponents[1]
+        r = c:GetScaledSphereRadius()
+    end)
+    if not r then pcall(function() r = a.InteractionComponent:GetScaledSphereRadius() end) end
+    return (r and r > 0 and r or 150) + 60
 end
 
 local function marker(point)
@@ -614,7 +655,7 @@ local function publishStatus()
         s.activity = (NAMES[t and t.kind or "Free"] or "task"):gsub("^%l", string.upper) .. " done - turn it in:"
         if how == "Camp" then
             s.activity = "You lead the clan's " .. thirdLabel():lower() .. "."
-            s.where, s.goal = "The meeting place", "Give out the clan's tasks (" .. cfg.reportKey .. ")"
+            s.where, s.goal = "The meeting place, next to your leader", "Give out the clan's tasks there"
         elseif how == "Pile" then
             s.where, s.goal = "Camp", "Bring your catch to the fresh-kill pile"
         elseif how == "Partner" then
@@ -776,6 +817,7 @@ local function cleanup(t)
     if t.guardMarker then removeMarker({ marker = t.guardMarker }) end
     if t.nestMarker then removeMarker({ marker = t.nestMarker }) end
     if t.meetMarker then removeMarker({ marker = t.meetMarker }) end
+    if t.meetSpot then removeMarker({ marker = t.meetSpot }) end
     if t.denMarker then removeMarker({ marker = t.denMarker }) end
     companionsLeave(t.companions)
     t.companions = nil
@@ -900,16 +942,26 @@ local function assign()
         -- leading = giving out the clan's tasks at its meeting place (operator 2026-10-28; the full management UI is a
         -- ticket): the leader's spot in camp, else the camp's middle - marked; the report key there ends the third
         t.lead = true
-        -- (your own clan's leader only: Events.Who falls back to any clan's - the marker pointed far off with RiverClan's
-        -- leader right there, operator 2026-10-30)
+        -- THE MEETING PLACE (operator 2026-10-30: "a location, that's marked, and when you go near, appears as
+        -- interactable, like any other location" - a key pressed somewhere in an area was illegible): next to your
+        -- clan's leader in camp (else the camp's middle), a game interactable (meetingSpot) - the game shows its own
+        -- "Interact" prompt there; interacting gives out the tasks (meetingInteract)
         local leader = ownLeader()
         local at = leader and leader:IsValid() and leader:K2_GetActorLocation()
-        if not (at and campInside(at)) then at = Duties.Camp().middle end
+        local where
+        if at and campInside(at) then
+            where = roleName(leader.narrativeRole)
+        else
+            at = Duties.Camp().middle
+            where = "the camp's middle (" .. (leader and "your leader is out of camp" or "no leader of your clan found") .. ")"
+        end
         if at then
             t.meet = { X = at.X, Y = at.Y, Z = at.Z }
+            t.meetSpot = meetingSpot(t.meet)
             t.meetMarker = marker(t.meet)
         end
-        log("duties: the clan's meeting place: %s", at and string.format("%.0f %.0f", at.X, at.Y) or "none (anywhere in camp)")
+        log("duties: the clan's meeting place: %s (%s), %s", where, at and string.format("%.0f %.0f", at.X, at.Y) or "-",
+            t.meetSpot and "interactable" or "NO interactable spawned")
         append(steps, { { kind = "Card", value = "Give out the clan's tasks at the meeting place." } })
     else
         append(steps, cfg.assignScenes[t.kind] or { { kind = "Card", value = "{DEPUTY}: {TASK}." } })
@@ -988,28 +1040,29 @@ local function reportTarget(how)
     return best, bd
 end
 
+-- the game's interact (Player_Interact) at the meeting place: the tasks are given out, the third ends
+local PLAYER_INTERACT = 65
+local function meetingInteract()
+    local t = today and today.task
+    if not (t and t.meetSpot and today.stage == "turnin" and today.turnIn == "Camp") then return end
+    local a, p = StaticFindObject(t.meetSpot), playerPos()
+    if not (a and a:IsValid() and p) then return end
+    local q = a:K2_GetActorLocation()
+    local d = math.sqrt((q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2)
+    if d > spotReach(a) then return end
+    log("duties: your cat gives out the clan's tasks at the meeting place - the %s ends", thirdName():lower())
+    turnedIn("Camp")
+end
+
 local function reportKey()
     local how = today and today.stage == "turnin" and today.turnIn
     if not how or how == "Pile" or how == "None" or WaCa.InMenu() then return end
-    if how == "Camp" then
-        local meet, p = today.task and today.task.meet, playerPos()
-        if meet and p then
-            local d = math.sqrt((meet.X - p.X) ^ 2 + (meet.Y - p.Y) ^ 2)
-            if d > cfg.reportRadius then
-                log("duties: the report key - at the meeting place to give out the tasks (%.0f away)", d)
-                return
-            end
-        elseif not camp.inside then
-            log("duties: the report key - back in camp first to end the %s", thirdName():lower())
-            return
-        end
-        log("duties: your cat gives out the clan's tasks - the %s ends (the report key)", thirdName():lower())
-        turnedIn("Camp")
-        return
-    end
+    -- (leading: the meeting place is an interactable now - meetingInteract)
+    if how == "Camp" then return end
     local cat, dist = reportTarget(how)
     if not cat then
         log("duties: the report key - no %s within %d to report to", how == "Partner" and "partner" or how, cfg.reportRadius)
+        feedback(string.format("No %s close enough to report to.", how == "Partner" and (today.task and today.task.who or "partner") or how:lower()))
         return
     end
     log("duties: your cat reports to %s (%.0f away, the report key)", pathOf(cat):match("([^.]+)$") or "?", dist)
@@ -1562,6 +1615,12 @@ function Duties.Init(c)
             local role = npc.narrativeRole and roleName(npc.narrativeRole) or ""
             if role:find(how .. "$") then turnedIn(how) end
         end
+    end)
+    WaCa.Watch("OnListenCommand", "/Script/SwtEngine.SwtScreen", "WaCaDutiesCommand", "pre", "Command")
+    WaCa.On("WaCaDutiesCommand", function(_, command)
+        if tonumber(command) ~= PLAYER_INTERACT then return end
+        local ok, err = pcall(meetingInteract)
+        if not ok then log("duties: the meeting place failed (%s)", tostring(err)) end
     end)
     WaCa.On("KeyDown", function(_, name)
         if tostring(name) ~= cfg.reportKey then return end

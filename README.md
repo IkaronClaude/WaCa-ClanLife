@@ -40,7 +40,7 @@ plays.
   shows the day and third, your task, where to go and how far along you are ("Prey 1/3"), then how to turn it in
   (`clanlife.ini [Hud]`).
 - **Deputies and leaders lead the clan's day** (from `duties.ini MaxRank` on): each morning and afternoon the clan's
-  meeting place is marked - go there and give out the tasks (the report key); the evening and the night follow as
+  meeting place is next to your leader in camp - go there and interact (the game's own prompt) to give out the tasks; the evening and the night follow as
   usual. Your rank is the game's own record: its rank quests in your save (WaCa Core's `player.rank`).
 - **Turn-ins never get stuck**: reporting to the deputy (or your mentor) is a conversation with them - or the report
   key (`F`, `duties.ini ReportKey`) next to them. The deputy answers in his own words (`duties.ini [Talk]`: your
