@@ -39,6 +39,9 @@ plays.
 - **The day at a glance**: while the loop runs, a panel like the game's own quest objective (left side of the HUD)
   shows the day and third, your task, where to go and how far along you are ("Prey 1/3"), then how to turn it in
   (`clanlife.ini [Hud]`).
+- **A day clock** (`clanlife.ini [DayClock]`): a dial on the HUD (top right) - noon at the top, a mark where Morning,
+  Noon, Evening and Night begin, a needle at the hour; its middle shows how tired your cat is (green rested, amber
+  Tired, red Exhausted) instead of a meter.
 - **Deputies and leaders lead the clan's day** (from `duties.ini MaxRank` on): each morning and afternoon the clan's
   meeting place is next to your leader in camp - go there and interact (the game's own prompt) to give out the tasks; the evening and the night follow as
   usual. Your rank is the game's own record: its rank quests in your save (WaCa Core's `player.rank`).
