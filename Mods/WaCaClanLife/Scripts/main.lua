@@ -75,5 +75,6 @@ require("walkers").Init(ctx({ Events = Events, Duties = Duties }))
 require("gathering").Init(ctx({ Events = Events, Days = Days, DayNight = DayNight }))
 -- the day at a glance on the HUD (clanlife.ini [Hud])
 require("hud").Init(ctx({}))
+require("mapmarks").Init(ctx({}))
 
 WaCa.Ready()
