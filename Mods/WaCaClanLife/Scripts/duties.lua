@@ -570,6 +570,7 @@ end
 -- cinematic interactable prompts wherever it is spawned; the placed rocks / sunspots don't, or go on cooldown)
 local GLOW = "/Game/Art/Vfx/Niagaras/GameplayElements/NS_Scent_Hint_Item.NS_Scent_Hint_Item"
 local MEET_COLOR = { R = 0.0, G = 0.9, B = 1.0, A = 1.0 }          -- cyan: clan management
+local GLOW_SCALE, GLOW_EVERY = 1.6, 2500
 local SPOT = "/Game/Gameplay/Blueprints/WorldElements/Interactables/BP_Interactable_CInematic.BP_Interactable_CInematic_C"
 local function meetingSpot(point)
     local path
@@ -584,58 +585,84 @@ local function meetingSpot(point)
     local ok, err = pcall(function()
         local lib = StaticFindObject("/Script/Niagara.Default__NiagaraFunctionLibrary")
         local fx = lib:SpawnSystemAtLocation(FindFirstOf("World"), WaCa.LoadAsset(GLOW),
-            { X = point.X, Y = point.Y, Z = point.Z - 40 }, { pitch = 0, Yaw = 0, Roll = 0 }, { X = 1, Y = 1, Z = 1 },
-            false, false, 0, true)
+            { X = point.X, Y = point.Y, Z = point.Z - 40 }, { pitch = 0, Yaw = 0, Roll = 0 },
+            { X = GLOW_SCALE, Y = GLOW_SCALE, Z = GLOW_SCALE }, false, false, 0, true)
         fx:SetVariableLinearColor(FName("Code_Color"), MEET_COLOR)
         fx:Activate(true)
         glow = pathOf(fx)
     end)
     if not ok then log("duties: the meeting place's glow couldn't be made (%s)", tostring(err)) end
+    -- (the glow is one short burst - VM 2026-10-30: gone after a few seconds - so it plays again every GLOW_EVERY ms
+    -- while its spot stands; the chain ends with the spot)
+    local function pulse()
+        local g, s = glow and StaticFindObject(glow), path and StaticFindObject(path)
+        if not (g and g:IsValid() and s and s:IsValid()) then return end
+        pcall(function() g:ResetSystem() end)
+        ExecuteInGameThreadWithDelay(GLOW_EVERY, pulse)
+    end
+    if glow then ExecuteInGameThreadWithDelay(GLOW_EVERY, pulse) end
     return path, glow
 end
 
--- open above (3 m of air - VM 2026-10-30: a navigable point under a fallen trunk is no meeting place): nothing of the
--- world (terrain, rocks, trees - world static) between the ground and 3 m up
+-- WHERE the meeting spot goes (operator 2026-10-30: it sat inside the rock under the leader, and must not share its
+-- place with a cat you can talk to - the leader's own Talk took the interact): open, standable ground 2.5 - 4.5 m
+-- around the leader, at least 2.5 m from every story cat, the one nearest the camp's middle. Read off the world itself
+-- (the camp has no navigation mesh - VM: every projection came back unmoved): terrain / rock / tree (world static)
+-- ground about the leader's height under it, 3 m of air over it (not under a fallen trunk), nothing at knee height
+-- 60 cm around it (not inside a rock or against a wall).
 local kismetLib
-local function openSky(pawn, p)
+local NONE = { R = 0, G = 0, B = 0, A = 0 }
+local function traceHit(pawn, from, to)
     kismetLib = kismetLib or StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
     local hit = {}
-    local ok, blocked = pcall(function()
-        return kismetLib:LineTraceSingleForObjects(pawn, { X = p.X, Y = p.Y, Z = p.Z + 40 }, { X = p.X, Y = p.Y, Z = p.Z + 300 },
-            { 0 }, false, { pawn }, 0, hit, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+    local ok, yes = pcall(function()
+        return kismetLib:LineTraceSingleForObjects(pawn, from, to, { 0 }, false, { pawn }, 0, hit, true, NONE, NONE, 0)
     end)
-    return ok and not blocked
+    if not (ok and yes) then return nil end
+    local z
+    pcall(function() z = hit.ImpactPoint.Z end)
+    if not z then pcall(function() z = hit.Location.Z end) end
+    return z or to.Z
 end
 
--- WHERE the meeting spot goes (operator 2026-10-30: it sat inside the rock under the leader, and must not share its
--- place with a cat you can talk to - the leader's own Talk took the interact): a point on the navigation mesh (walkable
--- ground) 2.5 - 4.5 m around the leader, at least 2.5 m from every story cat, the one nearest the camp's middle
+local function standable(pawn, x, y, nearZ)
+    local gz = traceHit(pawn, { X = x, Y = y, Z = nearZ + 150 }, { X = x, Y = y, Z = nearZ - 300 })
+    if not gz or math.abs(gz - nearZ) > 150 then return nil end
+    if traceHit(pawn, { X = x, Y = y, Z = gz + 40 }, { X = x, Y = y, Z = gz + 300 }) then return nil end
+    for k = 0, 3 do
+        local a = k * math.pi / 2
+        if traceHit(pawn, { X = x, Y = y, Z = gz + 40 }, { X = x + math.cos(a) * 60, Y = y + math.sin(a) * 60, Z = gz + 40 }) then
+            return nil
+        end
+    end
+    return gz
+end
+
 local function meetingPoint(leaderAt)
-    local nav = StaticFindObject("/Script/NavigationSystem.Default__NavigationSystemV1")
     local pawn = pc() and pc().Pawn
-    if not (nav and pawn) then return nil end
+    if not pawn then return nil end
     local cats = {}
     for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
         pcall(function() if a:IsValid() and not a.bHidden then cats[#cats + 1] = a:K2_GetActorLocation() end end)
     end
+    -- (the leader's feet: the ground under it)
+    local feet = traceHit(pawn, { X = leaderAt.X, Y = leaderAt.Y, Z = leaderAt.Z + 50 }, { X = leaderAt.X, Y = leaderAt.Y, Z = leaderAt.Z - 400 })
+        or leaderAt.Z - 40
     local mid = Duties.Camp().middle or leaderAt
     local best, bestScore
     for _, r in ipairs({ 250, 350, 450 }) do
         for k = 0, 11 do
             local ang = k * math.pi / 6
-            local want = { X = leaderAt.X + math.cos(ang) * r, Y = leaderAt.Y + math.sin(ang) * r, Z = leaderAt.Z }
-            local out = {}
-            pcall(function() nav:K2_ProjectPointToNavigation(pawn, want, out, nil, nil, { X = 60, Y = 60, Z = 300 }) end)
-            -- (Lua doesn't get the call's bool back - the projected point itself tells: on the mesh, next to the ask)
-            if type(out.X) == "number" and math.abs(out.X - want.X) < 80 and math.abs(out.Y - want.Y) < 80
-                and openSky(pawn, out) then
+            local x, y = leaderAt.X + math.cos(ang) * r, leaderAt.Y + math.sin(ang) * r
+            local gz = standable(pawn, x, y, feet)
+            if gz then
                 local clear = true
                 for _, c in ipairs(cats) do
-                    if math.sqrt((c.X - out.X) ^ 2 + (c.Y - out.Y) ^ 2) < 250 then clear = false break end
+                    if math.sqrt((c.X - x) ^ 2 + (c.Y - y) ^ 2) < 250 then clear = false break end
                 end
                 if clear then
-                    local score = math.sqrt((mid.X - out.X) ^ 2 + (mid.Y - out.Y) ^ 2)
-                    if not bestScore or score < bestScore then best, bestScore = { X = out.X, Y = out.Y, Z = out.Z }, score end
+                    local score = math.sqrt((mid.X - x) ^ 2 + (mid.Y - y) ^ 2)
+                    if not bestScore or score < bestScore then best, bestScore = { X = x, Y = y, Z = gz }, score end
                 end
             end
         end
@@ -1028,7 +1055,7 @@ local function assign()
         if at then
             t.meet = { X = at.X, Y = at.Y, Z = at.Z }
             t.meetSpot, t.meetGlow = meetingSpot(t.meet)
-            require("mapmarks").Set("meeting", t.meet, MEET_COLOR)            -- (and on the world map, cyan)
+            require("mapmarks").Set("meeting", t.meet, MEET_COLOR, "Meeting place: give out the clan's tasks")            -- (and on the world map, cyan)
             -- (no quest hint marker here: once tracked it guides to the tracked QUEST's objective - the main quest's
             -- StarClan marker far off, operator 2026-10-30; the cyan glow marks the spot)
         end

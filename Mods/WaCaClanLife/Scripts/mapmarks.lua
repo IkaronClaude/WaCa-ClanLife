@@ -1,15 +1,20 @@
 -- Marks on the game's world map (operator 2026-10-30: "a cyan map marker for it"): Clan Life's places - the meeting
 -- place you give out the clan's tasks at - drawn among the map's own icons when the map opens.
--- MapMarks.Set(id, { X, Y }, color) / MapMarks.Clear(id). A mark is an image in the map's icon layer
--- (GuiPopupWorldMap.CanvasGenericIcons), the legend's outpost icon tinted.
+-- MapMarks.Set(id, { X, Y }, color, label) / MapMarks.Clear(id). A mark is an image in the map's icon layer
+-- (GuiPopupWorldMap.CanvasGenericIcons): the game's white UI circle, tinted (the legend's icons are yellow - a tint
+-- made them green, VM 2026-10-30). The labels go out as the sticky topic "map.marks" ({ id = label }): WaCa Keybinds
+-- & Mouse names a mark with it when the mouse points at it.
 -- WHERE on the map: the map's own MapCoordinates (world box -> map box). Which way its axes run isn't in the data, so
--- it is read off the map itself: the player's icon (mcGuiPlayerIcon) sits where the game put your cat - of the eight
--- ways a world box can map onto the map box, the one that puts your cat there is the map's.
+-- it is read off the map itself: the game's checkpoint icons (GuiItemCheckPointMap, placed by their render translation)
+-- sit where its checkpoints are - of the eight ways a world box can map onto the map box, the one that puts every
+-- checkpoint on its icon is the map's (VM 2026-10-30: map u = world Y, v = 1 - world X, exact).
 local MapMarks = {}
 local WaCa, log
 local marks = {}                    -- id -> { at = {X, Y}, color }
 local shown = {}                    -- id -> image path (on the open map)
 local orient                        -- { swap, flipU, flipV } once read off the map
+local CIRCLE = "/Game/Art/UXD/Textures/TEMP/T_UI_Circle_512x512.T_UI_Circle_512x512"
+local SIZE = 44
 
 local function mapUp()
     for _, m in ipairs(FindAllOf("GuiPopupWorldMap") or {}) do
@@ -29,27 +34,47 @@ local function project(c, o, x, y)
 end
 
 local function readOrientation(m, c)
-    local pawn
-    for _, pc in ipairs(FindAllOf("SwtPlayerController") or {}) do
-        if pc:IsValid() and pc.Player and pc.Pawn and pc.Pawn:IsValid() then pawn = pc.Pawn end
+    local icons, cps = {}, {}
+    local canvas = m.CanvasGenericIcons
+    for i = 0, canvas:GetChildrenCount() - 1 do
+        pcall(function()
+            local w = canvas:GetChildAt(i)
+            if w:GetClass():GetFName():ToString():find("CheckPoint") then
+                local t = w.RenderTransform.Translation
+                icons[#icons + 1] = { X = t.X, Y = t.Y }
+            end
+        end)
     end
-    if not pawn then return nil end
-    local p = pawn:K2_GetActorLocation()
-    local slot = m.mcGuiPlayerIcon.Slot
-    local pos = slot:GetPosition()
+    for _, a in ipairs(FindAllOf("SwtAdventureCheckpoint") or {}) do
+        pcall(function() local q = a:K2_GetActorLocation() cps[#cps + 1] = { X = q.X, Y = q.Y } end)
+    end
+    if #icons == 0 or #cps == 0 then
+        log("map marks: no checkpoints to read the map's axes off (%d icons, %d checkpoints)", #icons, #cps)
+        return nil
+    end
     local best, bestD
     for _, swap in ipairs({ false, true }) do
         for _, fu in ipairs({ false, true }) do
             for _, fv in ipairs({ false, true }) do
                 local o = { swap = swap, flipU = fu, flipV = fv }
-                local mx, my = project(c, o, p.X, p.Y)
-                local d = math.abs(mx - pos.X) + math.abs(my - pos.Y)
-                if not bestD or d < bestD then best, bestD = o, d end
+                local total = 0
+                for _, cp in ipairs(cps) do
+                    local x, y = project(c, o, cp.X, cp.Y)
+                    local near
+                    for _, ic in ipairs(icons) do
+                        local d = math.abs(ic.X - x) + math.abs(ic.Y - y)
+                        if not near or d < near then near = d end
+                    end
+                    total = total + near
+                end
+                if not bestD or total < bestD then best, bestD = o, total end
             end
         end
     end
-    log("map marks: the map's axes read off your cat's icon (%s%s%s, %.0f off)", best.swap and "swapped " or "",
+    bestD = bestD / #cps
+    log("map marks: the map's axes read off its %d checkpoints (%s%s%s, %.1f off)", #cps, best.swap and "swapped " or "",
         best.flipU and "flip-u " or "", best.flipV and "flip-v" or "", bestD)
+    if bestD > 20 then return nil end
     return best
 end
 
@@ -58,25 +83,35 @@ local function draw(m)
     orient = orient or readOrientation(m, c)
     if not orient then return end
     local canvas = m.CanvasGenericIcons
-    local tex
-    pcall(function() tex = m.mcGuiMapLegend.mcGuiLegendOutspot.Icon end)
+    local tex = WaCa.LoadAsset(CIRCLE)
     for id, mark in pairs(marks) do
         local ok, err = pcall(function()
             local path = shown[id]
             local img = path and StaticFindObject(path)
+            -- (the map is the same widget each time it opens: a mark made before - or by the mod before a reload - is
+            -- still in its icon layer; a second one under the same name collided)
+            if not (img and img:IsValid()) then
+                for i = 0, canvas:GetChildrenCount() - 1 do
+                    local w = canvas:GetChildAt(i)
+                    if w and w:IsValid() and w:GetFName():ToString() == "WaCaMapMark_" .. id then img = w end
+                end
+                if img then shown[id] = (img:GetFullName():gsub("^%S+ ", "")) end
+            end
             if not (img and img:IsValid()) then
                 img = StaticConstructObject(StaticFindObject("/Script/UMG.Image"), m.WidgetTree, FName("WaCaMapMark_" .. id))
                 local slot = canvas:AddChildToCanvas(img)
                 slot:SetAutoSize(false)
-                slot:SetSize({ X = 56, Y = 56 })
-                slot:SetAlignment({ X = 0.5, Y = 0.5 })
+                slot:SetSize({ X = SIZE, Y = SIZE })
+                slot:SetPosition({ X = -SIZE / 2, Y = -SIZE / 2 })
                 slot:SetZOrder(50)
                 if tex and tex:IsValid() then img:SetBrushFromTexture(tex, false) end
                 shown[id] = (img:GetFullName():gsub("^%S+ ", ""))
             end
             img:SetColorAndOpacity(mark.color)
+            -- (the map's icons are placed by their render translation, their box at the point - this one centred on it)
             local x, y = project(c, orient, mark.at.X, mark.at.Y)
-            img.Slot:SetPosition({ X = x, Y = y })
+            img:SetRenderTranslation({ X = x, Y = y })
+            log("map marks: %s at %.0f %.0f on the map", id, x, y)
             img:SetVisibility(4)                                     -- (hit-test invisible: the map's own icons get the mouse)
         end)
         if not ok then log("map marks: %s couldn't be drawn (%s)", id, tostring(err)) end
@@ -97,13 +132,21 @@ local function refresh()
     draw(m)
 end
 
-function MapMarks.Set(id, at, color)
-    marks[id] = { at = { X = at.X, Y = at.Y }, color = color }
+local function publishLabels()
+    local labels = {}
+    for id, mark in pairs(marks) do labels[id] = mark.label end
+    WaCa.Publish("map.marks", labels, true)
+end
+
+function MapMarks.Set(id, at, color, label)
+    marks[id] = { at = { X = at.X, Y = at.Y }, color = color, label = label or id }
+    publishLabels()
     ExecuteInGameThread(refresh)
 end
 
 function MapMarks.Clear(id)
     marks[id] = nil
+    publishLabels()
     ExecuteInGameThread(refresh)
 end
 
