@@ -538,8 +538,9 @@ end
 
 -- your clan's leader (its quest actor's narrative role "<Clan>Leader"), or nil
 local function ownLeader()
+    -- (your cat's own ClanType - read from the game; nil only before a cat is loaded)
     local mine = clanName()
-    if not mine then return nil end
+    if not mine then log("duties: your cat's clan couldn't be read - no cat loaded?") return nil end
     for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
         local found
         pcall(function()
