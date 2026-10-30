@@ -52,8 +52,8 @@ plays.
 - **Your party goes with you** (`walkers.ini [Party]`): the cats on the pause menu's PARTY page leave camp with you and
   run alongside your cat (walk / trot / run to keep up, the ground followed), hold back while you sneak, are set down
   beside you when they fall far behind or get stuck, and walk back to their spots when you come into camp. They are the
-  ones who comment on your hunts. (The party is read off the PARTY page once the game has filled it - open the pause
-  menu once per session.)
+  ones who comment on your hunts. They wait while a fight is on (the game brings its own party to the fight). The party
+  is the story's, read from the game's save.
 - **The camp's named cats move about** (`walkers.ini`): the game's nameless walking cats are taken out; instead, each
   third of the day a few of the camp's named cats move (the ones that moved longest ago first), on the game's own walk
   animation, following the ground. Plain warriors, apprentices and elders roam across camp (a den's front, the

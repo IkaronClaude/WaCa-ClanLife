@@ -21,8 +21,9 @@
 --   forest"): the cats on the pause menu's PARTY page are camp story cats with no AI or movement of their own (an
 --   AI move on one crashed the game, VM 2026-10-30), so this mover takes them along: outside camp each walks to its
 --   spot beside your cat (walk / trot / run by the gap, the ground followed, swept), holds while you sneak, and is set
---   down behind you when it falls far behind or is stuck; walking into camp they go back to their spots. Who: read
---   off the PARTY page itself (the game fills it - its own list) whenever it is filled; walkers.ini [Party].
+--   down beside you when it falls far behind or is stuck; it waits while a fight is on; walking into camp they go back
+--   to their spots. Who: the story's party in the game's save (its PartySetup roles - the PARTY page's cats); walkers.ini
+--   [Party].
 local Walkers = {}
 
 local WaCa, log, Events, Duties
@@ -230,17 +231,43 @@ local function playerPawn()
 end
 
 -- the party's story cats in the world: your clan's quest cat with that name (the camp's - not a far filler copy)
+-- WHO: the story's party from the game's save (WaCa Core's PartyRoles: QuestProgression <chapter>.PartySetup - story
+-- roles, known from the start); else the PARTY page's names (filled when the pause menu opens). A list of
+-- { role = ENarrativeRole name } or { name = the cat's name }.
+local function readParty()
+    local roles = WaCa.PartyRoles and WaCa.PartyRoles()
+    if roles and #roles > 0 then
+        local out = {}
+        for _, r in ipairs(roles) do out[#out + 1] = { role = r } end
+        return out, "the save's party"
+    end
+    local names = readPartyPage()
+    if names then
+        local out = {}
+        for _, n in ipairs(names) do out[#out + 1] = { name = n } end
+        return out, "the PARTY page"
+    end
+    if roles then return {}, "the save's party" end
+end
+local function partyKey(list)
+    local k = {}
+    for _, e in ipairs(list or {}) do k[#k + 1] = e.role or e.name end
+    return table.concat(k, "|")
+end
+
 local function partyActors()
     local out = {}
     if not party.names or #party.names == 0 then return out end
     local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
     local mid
     pcall(function() local camp = Duties.Camp() mid = camp and camp.middle end)
-    for i, name in ipairs(party.names) do
+    for i, member in ipairs(party.names) do
         local best, bd
         for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
             pcall(function()
-                if not a:IsValid() or nameOf(a) ~= name then return end
+                if not a:IsValid() then return end
+                if member.role and enumName("/Script/SwtQuest.ENarrativeRole", a.narrativeRole, roleCache) ~= member.role then return end
+                if member.name and nameOf(a) ~= member.name then return end
                 local clan = enumName("/Script/SwtQuest.EClanType", a.ClanType, clanCache)
                 if myClan and clan and clan ~= myClan then return end
                 local q = a:K2_GetActorLocation()
@@ -248,7 +275,7 @@ local function partyActors()
                 if not bd or d < bd then best, bd = a, d end
             end)
         end
-        if best then out[#out + 1] = { actor = best, name = name, slot = i } end
+        if best then out[#out + 1] = { actor = best, name = nameOf(best) or member.name or member.role, slot = i } end
     end
     return out
 end
@@ -295,6 +322,20 @@ function Walkers.Party()
     return out
 end
 
+-- a fight is on: the game's combat manager has an enemy (set as the fight starts - before its screens - and cleared at
+-- its end). The game takes your cat to the fight's arena and brings its own party there; ours waits (VM 2026-10-30: the
+-- party "caught up" 612 m into the arena - the story cats stood in the fight twice)
+local combatManager
+local function inFight()
+    local on = false
+    pcall(function()
+        if not (combatManager and combatManager:IsValid()) then combatManager = FindFirstOf("SwtAdventureCombatManager") end
+        local e = combatManager and combatManager.EnemyCharacter
+        on = e ~= nil and e:IsValid()
+    end)
+    return on
+end
+
 local function gait(a, m, anim)
     if m.gait == anim then return end
     m.gait = anim
@@ -306,6 +347,7 @@ local function followStep(path, a, m, dt, paused)
     local pawn = playerPawn()
     if not pawn then return end
     local p, r, q = pawn:K2_GetActorLocation(), pawn:K2_GetActorRotation(), a:K2_GetActorLocation()
+    paused = paused or (inFight() and "a fight") or false
     -- (every 10 s a line per party cat: how far, and what holds it - the tail shows why one doesn't come)
     if WaCa.Now() - (m.reported or 0) >= 10 then
         m.reported = WaCa.Now()
@@ -313,7 +355,11 @@ local function followStep(path, a, m, dt, paused)
             paused and (" - holds: " .. tostring(paused)) or party.sneaking and " - holds: you sneak" or "",
             m.lastReal and (WaCa.Now() - m.lastReal) or 0)
     end
-    if paused or party.sneaking then gait(a, m, nil) return end
+    if paused or party.sneaking then
+        m.lastReal = nil                                -- (no catch-up stride from the time it held)
+        gait(a, m, nil)
+        return
+    end
     local fy = math.rad(r.Yaw)
     -- (alongside your cat - behind it they stood behind the camera, which is ~1 m behind the cat: never seen, VM
     -- 2026-10-30; running, they lag a little on their own;
@@ -742,12 +788,15 @@ function Walkers.Init(c)
     ExecuteInGameThreadWithDelay(1000, loop)
     local function lookLoop()
         pcall(look)
-        -- (the party: the PARTY page, whenever the game has filled it - a change shows at once)
+        -- (the party: from the save, else the PARTY page - a change shows at once)
         if party.follow and inWorld then
-            local names = readPartyPage()
-            if names and table.concat(names, "|") ~= table.concat(party.names or {}, "|") then
-                party.names = names
-                log("walkers: party - the PARTY page lists %s", #names > 0 and table.concat(names, ", ") or "nobody but you")
+            local members, from = readParty()
+            if members and partyKey(members) ~= partyKey(party.names) then
+                party.names = members
+                local who = {}
+                for _, e in ipairs(partyActors()) do who[#who + 1] = e.name end
+                log("walkers: party - %s: %s", from, #members == 0 and "nobody but you"
+                    or (partyKey(members):gsub("|", ", ") .. " = " .. (#who > 0 and table.concat(who, ", ") or "no cat found")))
                 pcall(partyHome, "the party changed")
                 pcall(partyFollow, "the party")
             end
