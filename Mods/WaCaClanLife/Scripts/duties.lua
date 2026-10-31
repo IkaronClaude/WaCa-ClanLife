@@ -31,7 +31,7 @@ local Duties = {}
 
 local WaCa, log, DayNight, Events, Days
 local THIRDS = { "Morning", "Noon", "Evening" }
-local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true }
+local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true, Gather = true }
 local COUNTED = { Hunt = true, Patrol = true, Train = true, NightWatch = true }
 local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow = 50, patrolPoints = 2, pilePerPrey = 4,
               companions = 2, companionRadius = 3000,
@@ -42,7 +42,8 @@ local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Depu
               hours = { Morning = 8, Noon = 13, Evening = 19, Night = 23 },
               weights = { Morning = { Hunt = 2, Patrol = 2, Train = 1 }, Noon = { Hunt = 1, Patrol = 1, Train = 2 },
                           Evening = { Patrol = 2, Hunt = 1, Free = 1 }, Night = { Sleep = 3, NightWatch = 1 } },
-              turnIn = { Hunt = "Pile", Patrol = "Deputy", Free = "Deputy", Train = "Partner" },
+              turnIn = { Hunt = "Pile", Patrol = "Deputy", Free = "Deputy", Train = "Partner", Gather = "MedicineCat" },
+              gatherCount = 3, gatherReach = 250, gatherMinDist = 1500, gatherMaxRank = "Apprentice",
               pileFactor = 3, campRadius = 3500, campMax = 6000, watchStanding = 1, stepEvery = 1,
               reportKey = "F", reportRadius = 500,
               thirdScenes = {}, assignScenes = {}, watchScene = {}, clanEvents = {} }
@@ -190,6 +191,60 @@ local function patrolPoints(n)
         if not ok then log("duties: a patrol point couldn't be placed") end
     end
     return out
+end
+
+-- GATHERING for the medicine cat (tickets.md "Apprentice duties", operator 2026-10-28: fetch moss / herbs for the
+-- medicine cat): n of the game's own pickups out in the territory - moss where the world has it
+-- (BP_InteractableReward_Container_Moss), else its herbs (BP_Pickup_*: healing herbs, catnip ...) - each marked like a
+-- border point; reaching one gathers it (the game's own pickup works there too). Turned in to the medicine cat.
+local GATHER = { "BP_InteractableReward_Container_Moss_C", "BP_Pickup_SmallHealingHerb_C", "BP_Pickup_MediumHealingHerb_C",
+                 "BP_Pickup_BigHealingHerb_C", "BP_Pickup_SmallCatnip_C", "BP_Pickup_MediumCatnip_C", "BP_Pickup_BigCatnip_C" }
+local function gatherPoints(n)
+    local p = pc() and pc().Pawn
+    if not p then return {}, nil end
+    local at = p:K2_GetActorLocation()
+    local found, what = {}, nil
+    for _, cls in ipairs(GATHER) do
+        if #found >= n then break end
+        for _, a in ipairs(FindAllOf(cls) or {}) do
+            pcall(function()
+                if a.bHidden then return end
+                local q = a:K2_GetActorLocation()
+                local d = math.sqrt((q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2)
+                if d >= cfg.gatherMinDist and d <= cfg.maxDist then
+                    found[#found + 1] = { X = q.X, Y = q.Y, Z = q.Z, d = d }
+                    what = what or (cls:find("Moss") and "moss" or "herbs")
+                end
+            end)
+        end
+    end
+    table.sort(found, function(x, y) return x.d < y.d end)
+    -- (spots apart from each other: two herbs side by side were gathered in one step - VM 2026-10-31)
+    local spaced = {}
+    for _, f in ipairs(found) do
+        local ok = true
+        for _, o in ipairs(spaced) do
+            if (f.X - o.X) ^ 2 + (f.Y - o.Y) ^ 2 < (cfg.gatherReach * 4) ^ 2 then ok = false break end
+        end
+        if ok then spaced[#spaced + 1] = f end
+    end
+    found = spaced
+    local out = {}
+    local class = WaCa.LoadAsset(HINT)
+    for i = 1, math.min(n, #found) do
+        local point = found[i]
+        point.d = nil
+        pcall(function()
+            local marker = class and p:GetWorld():SpawnActor(class, point, { pitch = 0, Yaw = 0, Roll = 0 })
+            if marker and marker:IsValid() then
+                pcall(function() marker.SenseTrackedComponent.bTrackingEnabled = true end)
+                pcall(function() marker:OnQuestTracked(true, nil) end)
+                point.marker = (marker:GetFullName():gsub("^%S+ ", ""))
+            end
+        end)
+        out[#out + 1] = point
+    end
+    return out, what
 end
 
 -- the hunting ground for the day's hunt (tickets.md 8, hunting missions): a prey creature about 20-90 m away, its
@@ -713,6 +768,7 @@ end
 -- --- the loop ---
 
 local NAMES = { Hunt = "hunting", Patrol = "patrol", Train = "training", Free = "free time", NightWatch = "night watch",
+                Gather = "gathering",
                 Sleep = "sleep" }
 
 local function thirdName(i) return THIRDS[i or (today and today.third) or 1] or "Night" end
@@ -741,6 +797,11 @@ local function describe(t)
         return string.format("patrol %d border points (%d)", #t.points, d)
     end
     if t.kind == "Train" and t.who then return "spar with " .. t.who end
+    if t.kind == "Gather" and t.points then
+        local d = 0
+        for _, pt in ipairs(t.points) do if pt.done then d = d + 1 end end
+        return string.format("gather %s for the medicine cat (%d of %d)", t.what or "herbs", d, #t.points)
+    end
     return NAMES[t.kind] or t.kind
 end
 
@@ -767,7 +828,8 @@ local function publishStatus()
         elseif how == "Partner" then
             s.where, s.goal = "Camp", "Talk to " .. ((t and t.who) or "your partner")
         else
-            s.where, s.goal = "Camp", "Report to the " .. tostring(how):lower()
+            -- (MedicineCat -> "medicine cat": VM 2026-10-31 showed "Report to the medicinecat")
+            s.where, s.goal = "Camp", "Report to the " .. tostring(how):gsub("(%l)(%u)", "%1 %2"):lower()
         end
     elseif today.stage == "event" then
         s.where = "Camp"
@@ -785,6 +847,11 @@ local function publishStatus()
         s.done = t.got >= t.need
     elseif t and t.kind == "Patrol" and t.points then
         s.where, s.activity, s.goal, s.got, s.need = "The border", "Patrol the border:", "Border points", 0, #t.points
+        for _, pt in ipairs(t.points) do if pt.done then s.got = s.got + 1 end end
+        s.done = s.got >= s.need
+    elseif t and t.kind == "Gather" and t.points then
+        s.where, s.activity = "The territory", "Gather for the medicine cat:"
+        s.goal, s.got, s.need = (t.what or "herbs"):gsub("^%l", string.upper), 0, #t.points
         for _, pt in ipairs(t.points) do if pt.done then s.got = s.got + 1 end end
         s.done = s.got >= s.need
     elseif t and t.kind == "Train" then
@@ -886,6 +953,7 @@ local function pickKind(name)
         if same > 0 then x = x * cfg.repeatFactor ^ same end
         if kind == "Hunt" and low then x = x * cfg.pileFactor end
         if kind == "Train" and not canTrain then x = 0 end
+        if kind == "Gather" and not (rank and r[cfg.gatherMaxRank] and rank <= r[cfg.gatherMaxRank]) then x = 0 end
         if kind == "Hunt" and plan and plan.hunt == 0 then x = 0 end
         if kind == "Patrol" and plan and plan.patrol == 0 then x = 0 end
         if x > 0 then
@@ -916,7 +984,7 @@ local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree
 local function cleanup(t)
     if t.ground then removeMarker(t.ground) mapClear("hunt") end
     for i, pt in ipairs(t.points or {}) do
-        mapClear("patrol" .. i)
+        mapClear((t.kind == "Gather" and "gather" or "patrol") .. i)
         removeMarker(pt)
         removeArea(pt.area)
     end
@@ -946,10 +1014,12 @@ local function reached(t, what, i)
         pt.done = true
         removeMarker(pt)
         removeArea(pt.area)
-        log("duties: border point %d checked", i)
+        local gathering = t.kind == "Gather"
+        log(gathering and "duties: %s gathered (%d)" or "duties: border point %d checked", gathering and t.what or i, i)
         local all = true
         for _, q in ipairs(t.points) do if not q.done then all = false end end
-        if all then taskDone(t) else card(string.format("Border point checked - %s.", describe(t))) end
+        if all then taskDone(t)
+        else card(string.format(gathering and "Gathered - %s." or "Border point checked - %s.", describe(t))) end
         statusSoon()
     elseif what == "teacher" then
         if t.fighting or WaCa.InMenu() then return end
@@ -993,6 +1063,20 @@ local function setUp(kind)
                 end)
             end
             t.companions = companionsJoin(cfg.companions)
+        end
+    elseif kind == "Gather" then
+        t.points, t.what = gatherPoints(cfg.gatherCount)
+        if #t.points == 0 then
+            log("duties: nothing to gather near enough - free time instead")
+            t.kind, t.points = "Free", nil
+        else
+            for i, pt in ipairs(t.points) do
+                mapMark("gather" .. i, pt, MARK_HUNT, "Gather " .. (t.what or "herbs"))
+                pt.area = placeArea(pt, { X = cfg.gatherReach, Y = cfg.gatherReach, Z = 1000 }, 0, function(entering)
+                    if entering then reached(t, "point", i) end
+                end)
+            end
+            log("duties: gather %s - %d spots marked (the game's own %s)", t.what, #t.points, t.what)
         end
     elseif kind == "Train" then
         local partner = trainingPartner()
@@ -1460,6 +1544,8 @@ local function where()
     local function dist(q) return q and math.sqrt((q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2) or math.huge end
     if t.kind == "Patrol" then
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.reach then reached(t, "point", i) end end
+    elseif t.kind == "Gather" and t.points then
+        for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.gatherReach then reached(t, "point", i) end end
     elseif t.kind == "Train" then
         local a = StaticFindObject(t.path)
         if a and a:IsValid() and dist(a:K2_GetActorLocation()) <= cfg.reach then reached(t, "teacher") end
@@ -1660,6 +1746,11 @@ function Duties.Init(c)
     cfg.pileLow = tonumber(h.PileLow or "") or cfg.pileLow
     cfg.pilePerPrey = tonumber(h.PilePerPrey or "") or cfg.pilePerPrey
     cfg.huntingGround = (h.HuntingGround or "1") ~= "0"
+    local gs = ini["Gather"] or {}
+    cfg.gatherCount = math.max(1, tonumber(gs.Count or "") or cfg.gatherCount)
+    cfg.gatherReach = tonumber(gs.Reach or "") or cfg.gatherReach
+    cfg.gatherMinDist = tonumber(gs.MinDistance or "") or cfg.gatherMinDist
+    cfg.gatherMaxRank = (gs.MaxRank or "") ~= "" and gs.MaxRank or cfg.gatherMaxRank
     local p = ini["Patrol"] or {}
     cfg.patrolPoints = math.max(0, math.floor(tonumber(p.Points or "") or cfg.patrolPoints))
     cfg.reach = tonumber(p.Reach or "") or cfg.reach
