@@ -76,7 +76,8 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   For other mods: the `WalkerMoves` event (name, actor path, `home`/`away`) when a cat sets off, `WalkerWalkTo`
   (actor path, X, Y, Z: that cat walks there, stays a while, walks home), and `PlayScene`
   (step lines as in `clanevents.ini`, joined by `|`, e.g. `Groups: Prey|Wait: 3|Release`) to play a scene now.
-- **The clan's own patrols** (`patrols.ini`): clanmates gather in camp and head out to the border together.
+- **The clan's own patrols** (`patrols.ini`): camp cats head out to the border together, stop at each point and
+  come home - meet them out there and they stop, and the one leading says a word to you (`lines.ini [PatrolMeet]`).
 - **New things to say** (`lines.ini`): lines per cat role and time of day, and **dialogue by story day** - a queen says
   one of three lines each day of a week, a new one each day, no repeats until all were said.
 - **Clan activities** (`activities.ini`): clanmates sit, nap, sniff around or play-fight in camp; press G next to a story

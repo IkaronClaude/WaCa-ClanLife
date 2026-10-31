@@ -37,6 +37,10 @@ local RUN = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Run_1.A_CatMa
 -- stay there a while and walk home; come close while one hunts and it asks you, once, to give it space (a subtitle,
 -- WaCa Cutscenes' ShowLine). walkers.ini [Jobs]: On, Hunters, Radius, Line1...
 local jobs = { on = true, hunters = 1, radius = 800, stay = { 60, 120 }, lines = {} }
+-- PATROLS on foot (tickets.md "Patrol encounters", operator 2026-10-28): the clan's patrols walk with this mover (the
+-- AI walks they had fail on this map) - and meeting one out there stops it a moment: its leader speaks (a subtitle),
+-- the rest wait. Lines: lines.ini [PatrolMeet] Line1... ({PLAYER}). groups[id] = { cats = { path }, met, onBack, left }
+local patrols = { groups = {}, nextId = 0, radius = 700, pause = 8, lines = {} }
 local party = { follow = true, distance = 40, side = 70, spread = 160, catchUp = 2500, names = nil, outside = false, sneaking = false }
 local movers = {}           -- named cat path -> { home, homeRot, legs = { {X,Y,Z} ... }, leg, state, wait, kind, name }
 local lastMoved = {}        -- name -> the turn it last moved
@@ -372,6 +376,49 @@ function Walkers.Unescort(paths, why)
     if #back > 0 then log("walkers: %s go(es) back to their spots (%s)", table.concat(back, ", "), why or "done") end
 end
 
+-- a patrol of n of the camp's plain cats: the points one after another (a short stop at each - marking), then each
+-- home; onBack() when the last is home. Returns its id and the cats' names, or nil.
+function Walkers.Patrol(n, points, why, onBack)
+    if not looping or (n or 0) <= 0 or #(points or {}) == 0 then return nil end
+    local mid
+    pcall(function() mid = Duties.Camp().middle end)
+    local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
+    local cats = {}
+    for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+        pcall(function()
+            if not (a:IsValid() and shown(a)) or movers[pathOf(a)] then return end
+            if kindOf(a, myClan) ~= "roamer" then return end
+            local q = a:K2_GetActorLocation()
+            if not mid or (q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2 <= 7000 ^ 2 then cats[#cats + 1] = a end
+        end)
+    end
+    if #cats == 0 then return nil end
+    patrols.nextId = patrols.nextId + 1
+    local id = patrols.nextId
+    local g = { cats = {}, met = false, onBack = onBack, left = 0 }
+    local names = {}
+    for i = 1, math.min(n, #cats) do
+        local a = table.remove(cats, math.random(#cats))
+        local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+        local home = { X = q.X, Y = q.Y, Z = q.Z }
+        local legs = {}
+        for _, pt in ipairs(points) do
+            -- (side by side, not on one spot)
+            legs[#legs + 1] = { X = pt.X + (i - 1) * 120, Y = pt.Y + ((i % 2 == 0) and 120 or -120), Z = pt.Z }
+        end
+        legs[#legs + 1] = home
+        local path = pathOf(a)
+        movers[path] = { home = home, homeRot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll }, legs = legs, leg = 1,
+                         state = "wait", wait = 0.5 * i, kind = "patrol", patrol = id, lead = i == 1, name = nameOf(a) or "?" }
+        g.cats[#g.cats + 1] = path
+        names[#names + 1] = movers[path].name
+    end
+    g.left = #g.cats
+    patrols.groups[id] = g
+    log("walkers: patrol %d - %s head out to %d border point(s) (%s)", id, table.concat(names, ", "), #points, why or "the clan")
+    return id, names
+end
+
 -- n of the camp's plain cats go hunting (NPC jobs): each to a place the game puts prey, 30-90 m from camp
 function Walkers.SendHunting(n, why)
     if not looping or (n or 0) <= 0 then return {} end
@@ -542,6 +589,30 @@ local function tick()
             movers[path] = nil
         elseif m.follow then
             followStep(path, a, m, dt, paused)
+        elseif m.patrol and m.lead and patrols.groups[m.patrol] and not patrols.groups[m.patrol].met and not paused
+            and m.leg < #m.legs and (function()
+                local ok, near = pcall(function()
+                    local p, q = playerPawn():K2_GetActorLocation(), a:K2_GetActorLocation()
+                    return (p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2 <= patrols.radius ^ 2
+                end)
+                return ok and near
+            end)() then
+            -- (you meet the patrol out there: it stops a moment and its leader speaks)
+            local g = patrols.groups[m.patrol]
+            g.met = true
+            for _, cp in ipairs(g.cats) do
+                local cm = movers[cp]
+                local ca = StaticFindObject(cp)
+                if cm and ca and ca:IsValid() and cm.state == "walk" then
+                    cm.state, cm.wait = "wait", patrols.pause
+                    cm.leg = math.max(1, cm.leg)          -- (the same leg goes on after the stop)
+                    playWalk(ca, false)
+                end
+            end
+            local line = patrols.lines[math.random(#patrols.lines)]
+            line = line:gsub("{PLAYER}", WaCa.PlayerName and WaCa.PlayerName() or "you")
+            log("walkers: patrol %d meets your cat - %s: %s", m.patrol, m.name, line)
+            WaCa.Emit("ShowLine", m.name .. ": " .. line)
         elseif m.hunting and not m.warned and not paused and #jobs.lines > 0 then
             -- (your cat too close to a hunting clanmate: a word, once per hunt)
             pcall(function()
@@ -617,6 +688,15 @@ local function tick()
                         m.hunting = false
                     end
                     playWalk(a, false)
+                    if m.leg > #m.legs and m.patrol and patrols.groups[m.patrol] then
+                        local g = patrols.groups[m.patrol]
+                        g.left = g.left - 1
+                        if g.left <= 0 then
+                            patrols.groups[m.patrol] = nil
+                            log("walkers: patrol %d is back", m.patrol)
+                            if g.onBack then pcall(g.onBack) end
+                        end
+                    end
                     if m.leg > #m.legs then
                         crumb("SetRot home", path)
                         pcall(function() a:K2_SetActorRotation(m.homeRot, true) end)
@@ -700,7 +780,7 @@ function Walkers.Turn(why, gen)
     crumb("turn begins")
     removeWalkers()
     for path, m in pairs(movers) do                                -- (the last turn's movers home first - not the party
-        if not m.follow and not m.job then sendHome(path, m) end      -- nor the hunters out on their job)
+        if not m.follow and not m.job and not m.patrol then sendHome(path, m) end   -- nor hunters / patrols out)
     end
     -- (a cat left on the walk animation by a mod reload mid-walk - its walk forgotten: idle again where it stands)
     local stray = 0
@@ -727,7 +807,9 @@ function Walkers.Turn(why, gen)
     for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
         pcall(function()
             if not (a:IsValid() and shown(a)) then return end
-            if movers[pathOf(a)] and (movers[pathOf(a)].follow or movers[pathOf(a)].job) then return end
+            if movers[pathOf(a)] and (movers[pathOf(a)].follow or movers[pathOf(a)].job or movers[pathOf(a)].patrol) then
+                return
+            end
             local q = a:K2_GetActorLocation()
             local nearMe = p and (q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2 <= 8000 ^ 2
             local inCamp = mid and (q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2 <= 7000 ^ 2
@@ -914,6 +996,15 @@ function Walkers.Init(c)
     for _, k in ipairs(jj.__order or {}) do
         if k:match("^Line%d*$") and jj[k] ~= "" then jobs.lines[#jobs.lines + 1] = jj[k] end
     end
+    local lini = WaCa.ReadContent(c.modDir .. "/config/lines.ini", "lines") or {}
+    local pm = lini["PatrolMeet"] or {}
+    for _, k in ipairs(pm.__order or {}) do
+        if k:match("^Line%d*$") and pm[k] ~= "" then patrols.lines[#patrols.lines + 1] = pm[k] end
+    end
+    if #patrols.lines == 0 then
+        patrols.lines = { "{PLAYER}! All quiet along the border so far.", "We're marking the border - keep your eyes open.",
+                          "Smelled ShadowClan near the stream. Stay sharp, {PLAYER}." }
+    end
     if #jobs.lines == 0 then
         jobs.lines = { "Easy! You'll scare off my prey.", "Keep back - I've nearly got it.", "Shh! Give me some space." }
     end
@@ -1033,6 +1124,16 @@ function Walkers.Init(c)
     end
     WaCa.On("NpcHunt", function(n)
         ExecuteInGameThread(function() pcall(Walkers.SendHunting, tonumber(n) or jobs.hunters, "asked") end)
+    end)
+    -- (other mods: a patrol of n now - WaCa.Emit("NpcPatrol", n): the clan's own border points)
+    WaCa.On("NpcPatrol", function(n)
+        ExecuteInGameThread(function()
+            pcall(function()
+                local mid = Duties.Camp().middle
+                local pts = Duties.BorderPoints(2, mid)
+                Walkers.Patrol(tonumber(n) or 3, pts, "asked")
+            end)
+        end)
     end)
     -- (other mods: n of the camp's cats walk with you - WaCa.Emit("TemporaryParty", 2, "a hunting patrol"); 0 = back home)
     local temporary = {}

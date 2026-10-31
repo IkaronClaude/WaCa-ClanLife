@@ -89,6 +89,22 @@ function Patrols.Init(c)
         end
         -- (the camp's own cats are story cats the game doesn't walk; the clanmates that walk are out in the territory -
         -- VM: none within 60 m of the camp. The nearest within GatherRadius meet in camp first, then head out together.)
+        -- (on foot with the walkers' mover - the camp's own cats, from camp; the AI walks of the field cats below fail
+        -- on this map: VM 2026-10-30. Meeting the patrol out there stops it: walkers.lua)
+        local ok, id = pcall(function()
+            local pts = Duties.BorderPoints(cfg.points, camp.middle)
+            if #pts == 0 then return nil end
+            caseOn(true)
+            return require("walkers").Patrol(cfg.size, pts, "the clan's " .. third:lower(), function()
+                caseOn(false)
+                WaCa.Emit("PatrolBack", "walkers")
+            end)
+        end)
+        if ok and id then
+            WaCa.Emit("PatrolOut", id)
+            return
+        end
+        caseOn(false)
         local cats = Follow.Nearest(cfg.size, cfg.gather, camp.middle)
         local points = Duties.BorderPoints(cfg.points, camp.middle)
         if #points > 0 then table.insert(points, 1, camp.middle) end
