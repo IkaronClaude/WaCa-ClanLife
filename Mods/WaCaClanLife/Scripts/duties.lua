@@ -465,6 +465,7 @@ end
 -- Island) or whose name id holds it (STR_ISLAND_ZONE) - its area boxes; a zone that only has a gate (the Island: one
 -- thin trigger where you step onto it, VM 2026-10-31) - that. nil when no zone matches.
 function Duties.ZonePlace(match)
+    if WaCa.ZonePlace then return WaCa.ZonePlace(match) end
     local sums = { area = { 0, 0, 0, 0 }, gate = { 0, 0, 0, 0 } }
     for _, z in ipairs(FindAllOf("WrcZoneNameTrigger") or {}) do
         pcall(function()
