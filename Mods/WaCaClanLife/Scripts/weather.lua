@@ -316,6 +316,12 @@ function Weather.Init(c)
             if not Weather.Set(tostring(name), tonumber(hours)) then log("weather: SetWeather - no weather %s", tostring(name)) end
         end)
     end)
+    -- (the season and the weather for story conditions and murmurs: Season = Leaf-bare, Weather = Rain)
+    pcall(function()
+        local Events = require("events")
+        Events.Provide("Season", function() return season or "" end)
+        Events.Provide("Weather", function() return current or "" end)
+    end)
     WaCa.On("DayStarted", function() updateSeason("a new day") end)
     -- (the save's own weather first - restore() enters the season without a spell of its own; then nothing is left
     -- to roll: VM 2026-10-31, the day's restore rolled "Clear (new season)" before the saved "Overcast")

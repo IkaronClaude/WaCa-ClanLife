@@ -60,6 +60,9 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   beside you when they fall far behind or get stuck, and walk back to their spots when you come into camp. They are the
   ones who comment on your hunts. They wait while a fight is on (the game brings its own party to the fight). The party
   is the story's, read from the game's save.
+- **Murmurings** (`lines.ini [Murmurs]`, `[Murmur.<Name>]`): walk past a camp cat and now and then it murmurs what it
+  thinks - about you (your standing), the leader (`LeaderFavour`), the fresh-kill pile, the season, the weather, a
+  Gathering - a new line each day, from every set whose `Require` holds; story packs add their own sets.
 - **Clanmates do their jobs** (`walkers.ini [Jobs]`): when a morning or an afternoon begins, a camp cat walks out to
   hunt where the game puts prey, stays a while and walks home - come too close while it hunts and it asks you to give
   it space. Other mods: the `NpcHunt` event (n cats).
@@ -123,7 +126,8 @@ points and the den of your task, and the meeting place.
 **A complete example**: [examples/WaCaStoryPackExample](examples/WaCaStoryPackExample) - a custom cat, a role, a
 cutscene and a clan event, no code.
 
-Built-in variables: `Day`, `Rank`, `Standing`, `Gathering.Chosen`, `Gathering.Count`. The order of a third's end:
+Built-in variables: `Day`, `Rank`, `Standing`, `Pile` (the fresh-kill pile, 0-100), `Season`, `Weather`,
+`Gathering.Chosen`, `Gathering.Count`, `Gathering.Today`. The order of a third's end:
 story beats (100), clan events (200 - `Order =`), `<Third>After` beats (300), the third's own event (350), the
 `ClanThirdEnd` hook (400) - so a story scene can come before or after the clan eats together.
 

@@ -1930,6 +1930,8 @@ function Duties.Init(c)
     pcall(function() cfg.restKey = (WaCa.ReadIni(c.modDir .. "/config/timeskip.ini") or {}).TimeSkip.RestKey end)
     cfg.restKey = cfg.restKey or ""
     Events.Provide("Standing", function() return standing end)
+    -- (the fresh-kill pile, 0-100: the clan's hunger for stories and murmurs - Pile < 30)
+    Events.Provide("Pile", function() return pileValue() end)
     log("duties: %s (%d clan events)", cfg.on and "on" or "off", #cfg.clanEvents)
     if not cfg.on then return end
     if not DayNight.Drive(cfg.hours.Morning) then

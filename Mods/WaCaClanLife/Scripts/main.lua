@@ -79,5 +79,6 @@ require("dayclock").Init(ctx({}))
 require("mapmarks").Init(ctx({}))
 -- clanmates comment on your hunts (lines.ini [Hunt])
 require("huntlines").Init(ctx({}))
+require("murmurs").Init(ctx({}))
 
 WaCa.Ready()
