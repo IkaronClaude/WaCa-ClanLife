@@ -27,7 +27,8 @@ plays.
 - **The clan loop** (`duties.ini`, `clanevents.ini`): morning and afternoon are duties - each time the deputy gives
   your cat a task: hunt (the catch goes onto the fresh-kill pile), patrol the border (clanmates walk with you, report
   to the deputy), training (a sparring fight - talk to your mentor afterwards), gathering for the medicine cat (apprentices: the
-game's own herbs or moss out in the territory, marked - bring them to the medicine cat) or free time. Do it and explore as long
+game's own herbs or moss out in the territory, marked - bring them to the medicine cat), clearing the dens' old
+bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and explore as long
   as you like - a done task never sends you home - then turn it in at its end point. Then the clan's event, if any (a
   clan meeting, called in the books' words from your clan's meeting place - `duties.ini [MeetingPlace]`; the Gathering).
   The **evening** is the clan together in camp: your clanmates join you, eat and

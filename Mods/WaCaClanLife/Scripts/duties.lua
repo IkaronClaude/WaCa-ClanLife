@@ -31,7 +31,8 @@ local Duties = {}
 
 local WaCa, log, DayNight, Events, Days
 local THIRDS = { "Morning", "Noon", "Evening" }
-local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true, Gather = true }
+local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true, Gather = true,
+                Bedding = true }
 local COUNTED = { Hunt = true, Patrol = true, Train = true, NightWatch = true }
 local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow = 50, patrolPoints = 2, pilePerPrey = 4,
               companions = 2, companionRadius = 3000,
@@ -42,7 +43,8 @@ local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Depu
               hours = { Morning = 8, Noon = 13, Evening = 19, Night = 23 },
               weights = { Morning = { Hunt = 2, Patrol = 2, Train = 1 }, Noon = { Hunt = 1, Patrol = 1, Train = 2 },
                           Evening = { Patrol = 2, Hunt = 1, Free = 1 }, Night = { Sleep = 3, NightWatch = 1 } },
-              turnIn = { Hunt = "Pile", Patrol = "Deputy", Free = "Deputy", Train = "Partner", Gather = "MedicineCat" },
+              turnIn = { Hunt = "Pile", Patrol = "Deputy", Free = "Deputy", Train = "Partner", Gather = "MedicineCat",
+                         Bedding = "Deputy" },
               gatherCount = 3, gatherReach = 250, gatherMinDist = 1500, gatherMaxRank = "Apprentice",
               pileFactor = 3, campRadius = 3500, campMax = 6000, watchStanding = 1, stepEvery = 1,
               reportKey = "F", reportRadius = 500,
@@ -199,6 +201,24 @@ end
 -- border point; reaching one gathers it (the game's own pickup works there too). Turned in to the medicine cat.
 local GATHER = { "BP_InteractableReward_Container_Moss_C", "BP_Pickup_SmallHealingHerb_C", "BP_Pickup_MediumHealingHerb_C",
                  "BP_Pickup_BigHealingHerb_C", "BP_Pickup_SmallCatnip_C", "BP_Pickup_MediumCatnip_C", "BP_Pickup_BigCatnip_C" }
+-- a spot just out of camp (the old bedding goes there): the nearest place the game itself put out in the territory -
+-- a herb, a border area - at least the camp's size from its middle; marked when the bedding is taken
+local function dumpSpot()
+    local c = Duties.Camp and Duties.Camp() or nil
+    local mid = c and c.middle
+    if not mid then return nil end
+    local best, bd
+    local function consider(q)
+        local d = math.sqrt((q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2)
+        if d >= cfg.campRadius and (not bd or d < bd) then best, bd = { X = q.X, Y = q.Y, Z = q.Z }, d end
+    end
+    for _, cls in ipairs(GATHER) do
+        for _, a in ipairs(FindAllOf(cls) or {}) do pcall(function() if not a.bHidden then consider(a:K2_GetActorLocation()) end end) end
+    end
+    for _, g in ipairs(FindAllOf("BP_Enemy_Generator_C") or {}) do pcall(function() consider(g:K2_GetActorLocation()) end) end
+    return best
+end
+
 local function gatherPoints(n)
     local p = pc() and pc().Pawn
     if not p then return {}, nil end
@@ -572,6 +592,23 @@ local function enumNames(path)
     return out
 end
 
+-- every den of your clan (the old bedding is in all of them): { door, dest, title }
+local function allClanDens()
+    local clans = enumNames("/Script/SwtQuest.EClanType")
+    local mine = clanName()
+    local out = {}
+    for _, door in ipairs(FindAllOf("WrcHousingDoorActor") or {}) do
+        pcall(function()
+            if not door:IsValid() or door.bIsExit then return end
+            local clan = clans[door.Clan]
+            if mine and clan and clan ~= mine then return end
+            out[#out + 1] = { door = door:K2_GetActorLocation(), dest = door.DestinationComponent:K2_GetComponentLocation(),
+                              title = door.ActorTitle:ToString() }
+        end)
+    end
+    return out
+end
+
 local function myDens()
     local clans, rankNames = enumNames("/Script/SwtQuest.EClanType"), enumNames("/Script/SwtQuest.ECharacterRank")
     local mine, rank = clanName(), WaCa.PlayerRank()
@@ -768,7 +805,7 @@ end
 -- --- the loop ---
 
 local NAMES = { Hunt = "hunting", Patrol = "patrol", Train = "training", Free = "free time", NightWatch = "night watch",
-                Gather = "gathering",
+                Gather = "gathering", Bedding = "the dens' bedding",
                 Sleep = "sleep" }
 
 local function thirdName(i) return THIRDS[i or (today and today.third) or 1] or "Night" end
@@ -797,6 +834,9 @@ local function describe(t)
         return string.format("patrol %d border points (%d)", #t.points, d)
     end
     if t.kind == "Train" and t.who then return "spar with " .. t.who end
+    if t.kind == "Bedding" and t.points then
+        return t.points[1].done and "throw the old bedding out of camp" or ("take the old bedding out of the " .. (t.den or "den"))
+    end
     if t.kind == "Gather" and t.points then
         local d = 0
         for _, pt in ipairs(t.points) do if pt.done then d = d + 1 end end
@@ -849,6 +889,13 @@ local function publishStatus()
         s.where, s.activity, s.goal, s.got, s.need = "The border", "Patrol the border:", "Border points", 0, #t.points
         for _, pt in ipairs(t.points) do if pt.done then s.got = s.got + 1 end end
         s.done = s.got >= s.need
+    elseif t and t.kind == "Bedding" and t.points then
+        local took = t.points[1].done
+        s.where = took and "Out of camp (marked)" or (t.den or "A den")
+        s.activity = "Clear out the old bedding:"
+        s.goal = took and "Throw it out of camp" or "Take the old moss from the den"
+        s.got, s.need = (took and 1 or 0) + (t.points[2].done and 1 or 0), 2
+        s.done = s.got >= 2
     elseif t and t.kind == "Gather" and t.points then
         s.where, s.activity = "The territory", "Gather for the medicine cat:"
         s.goal, s.got, s.need = (t.what or "herbs"):gsub("^%l", string.upper), 0, #t.points
@@ -953,7 +1000,9 @@ local function pickKind(name)
         if same > 0 then x = x * cfg.repeatFactor ^ same end
         if kind == "Hunt" and low then x = x * cfg.pileFactor end
         if kind == "Train" and not canTrain then x = 0 end
-        if kind == "Gather" and not (rank and r[cfg.gatherMaxRank] and rank <= r[cfg.gatherMaxRank]) then x = 0 end
+        if (kind == "Gather" or kind == "Bedding") and not (rank and r[cfg.gatherMaxRank] and rank <= r[cfg.gatherMaxRank]) then
+            x = 0
+        end
         if kind == "Hunt" and plan and plan.hunt == 0 then x = 0 end
         if kind == "Patrol" and plan and plan.patrol == 0 then x = 0 end
         if x > 0 then
@@ -984,7 +1033,7 @@ local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree
 local function cleanup(t)
     if t.ground then removeMarker(t.ground) mapClear("hunt") end
     for i, pt in ipairs(t.points or {}) do
-        mapClear((t.kind == "Gather" and "gather" or "patrol") .. i)
+        if t.kind ~= "Bedding" then mapClear((t.kind == "Gather" and "gather" or "patrol") .. i) end
         removeMarker(pt)
         removeArea(pt.area)
     end
@@ -992,6 +1041,7 @@ local function cleanup(t)
     if t.guardMarker then removeMarker({ marker = t.guardMarker }) end
     if t.nestMarker then removeMarker({ marker = t.nestMarker }) end
     if t.denMarker then mapClear("den") end
+    if t.kind == "Bedding" then mapClear("bedding") end
     if t.meetMarker then removeMarker({ marker = t.meetMarker }) end
     if t.meetSpot then removeMarker({ marker = t.meetSpot }) end
     if t.meetSpot then require("mapmarks").Clear("meeting") end
@@ -1008,6 +1058,26 @@ end
 -- a patrol point / the teacher / the guard spot reached
 local function reached(t, what, i)
     if t.done or not today or today.task ~= t then return end
+    if what == "point" and t.kind == "Bedding" then
+        local pt = t.points[i]
+        if pt.done or (i == 2 and not t.points[1].done) then return end
+        pt.done = true
+        if i == 1 then
+            log("duties: the old bedding taken from the %s", t.den or "den")
+            if t.denMarker then removeMarker({ marker = t.denMarker }) t.denMarker = nil end
+            mapClear("den")
+            t.points[2].marker = marker(t.points[2])
+            mapMark("bedding", t.points[2], MARK_PATROL, "Throw the old bedding out")
+            card("You gather up the old, flattened moss. Carry it out of camp.")
+        else
+            log("duties: the old bedding thrown out of camp")
+            removeMarker(t.points[2])
+            mapClear("bedding")
+            taskDone(t)
+        end
+        statusSoon()
+        return
+    end
     if what == "point" then
         local pt = t.points[i]
         if pt.done then return end
@@ -1063,6 +1133,23 @@ local function setUp(kind)
                 end)
             end
             t.companions = companionsJoin(cfg.companions)
+        end
+    elseif kind == "Bedding" then
+        -- (tickets.md "Apprentice duties": clear out the old bedding moss - into a den for it, then out of camp)
+        local dens = {}
+        pcall(function() dens = allClanDens() end)
+        local den = #dens > 0 and dens[math.random(#dens)] or nil
+        local dump = den and dumpSpot()
+        if not (den and dump) then
+            log("duties: no den / no spot out of camp for the old bedding - free time instead")
+            t.kind = "Free"
+        else
+            t.den = den.title ~= "" and den.title or "den"
+            t.points = { { X = den.dest.X, Y = den.dest.Y, Z = den.dest.Z }, dump }
+            t.denMarker = marker(den.door)
+            mapMark("den", den.door, MARK_DEN, t.den .. ": old bedding")
+            log("duties: the old bedding - from the %s (inside at %.0f %.0f %.0f), out of camp at %.0f %.0f", t.den,
+                den.dest.X, den.dest.Y, den.dest.Z, dump.X, dump.Y)
         end
     elseif kind == "Gather" then
         t.points, t.what = gatherPoints(cfg.gatherCount)
@@ -1544,6 +1631,9 @@ local function where()
     local function dist(q) return q and math.sqrt((q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2) or math.huge end
     if t.kind == "Patrol" then
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.reach then reached(t, "point", i) end end
+    elseif t.kind == "Bedding" and t.points then
+        if not t.points[1].done and dist(t.points[1]) <= 700 then reached(t, "point", 1)
+        elseif t.points[1].done and not t.points[2].done and dist(t.points[2]) <= cfg.gatherReach * 2 then reached(t, "point", 2) end
     elseif t.kind == "Gather" and t.points then
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.gatherReach then reached(t, "point", i) end end
     elseif t.kind == "Train" then
