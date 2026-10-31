@@ -124,6 +124,7 @@ They go in at the loop's hook points:
   `HuntCaught`, any mod's) / `Chance` / `Day` / `Every` / `Once` / `Order` / `Require` + steps;
   a value from another variable (`Set: LostKit.Until = Day + 2`) and conditions naming one (`Day <= LostKit.Until`)
   make missable side threads over several days (the example pack's lost kit);
+  `WaCa.Emit("ClanEvent", "<Name>")` runs one now (its `Require` checked) - a story mod's own timing, or trying one out;
 - `gatherings.ini` `[Announce]` / `[Chosen]` / `[NotChosen]` / `[Attend]` / `[StayBehind]`;
 - `days.ini` per story day: `<Third>Start`, `<Third>` beats, `<Third>Duty`, `NightDuty = Hunt` for a night hunt,
   `Gathering = Yes`, `GatheringPick = Chosen`, and when the story moves on (`Advance = Always / Duties / Rank:Warrior` -

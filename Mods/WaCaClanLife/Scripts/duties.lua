@@ -1958,6 +1958,25 @@ function Duties.Init(c)
         local ev = e.when:match("^Event:%s*(.+)$")
         if ev then onEvent[ev] = onEvent[ev] or {} table.insert(onEvent[ev], e) end
     end
+    -- (a clan event by name, now - its Require still checked: WaCa.Emit("ClanEvent", "<Name>") - a story mod's own
+    -- timing, or a writer trying an event out without waiting for its third)
+    WaCa.On("ClanEvent", function(name)
+        ExecuteInGameThread(function()
+            for _, e in ipairs(cfg.clanEvents) do
+                if e.name == tostring(name) then
+                    if Events.Check(e.require) then
+                        log("duties: the event %s, asked for", e.name)
+                        if e.once then eventsDone[e.name] = true end
+                        Events.Run(e.steps, function() end, {})
+                    else
+                        log("duties: the event %s, asked for - its Require (%s) isn't met", e.name, tostring(e.require))
+                    end
+                    return
+                end
+            end
+            log("duties: no clan event %s", tostring(name))
+        end)
+    end)
     for ev, list in pairs(onEvent) do
         WaCa.On(ev, function()
             ExecuteInGameThread(function()
