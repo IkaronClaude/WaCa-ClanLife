@@ -199,7 +199,8 @@ function DayNight.Drive(dayStart)
     driven = true
     generation = generation + 1                  -- a running step chain ends at its next step
     cfg.startHour, cfg.bedHour = dayStart % 24, dayStart % 24
-    hour = cfg.startHour
+    -- (not over the save's own time when it is already back - after a reload the restore comes first)
+    if not restoredFor then hour = cfg.startHour end
     DayNight.lastHour = math.floor(hour)
     log("daynight: the clan's day drives the clock (days start at %02d:00)", math.floor(cfg.startHour))
     return true
@@ -298,8 +299,7 @@ function DayNight.Init(c)
         restore()
         keep()
     end)
-    WaCa.On("ScreenShown", function(screen)
-        if running or not isHud(screen) then return end
+    local function worldUp()
         local s = sky()
         if not s then
             log("daynight: the world has no BP_DayNightSky - no cycle here")
@@ -309,9 +309,28 @@ function DayNight.Init(c)
         running = true
         refresh()
         startClock()
+    end
+    WaCa.On("ScreenShown", function(screen)
+        if running or not isHud(screen) then return end
+        worldUp()
     end)
     WaCa.On("ScreenHidden", function(screen)
         if isHud(screen) then running = false end
+    end)
+    -- (a reload of the mod with the world already up - a dev's hot reload, UE4SS's Lua restart: no save-load and no HUD
+    -- event come again, the day fell back to 1 / Greenleaf - tickets.md P3, VM 2026-10-30: restore and start now)
+    ExecuteInGameThreadWithDelay(3000, function()
+        if running then return end
+        local up = false
+        pcall(function()
+            for _, sc in ipairs(FindAllOf("SwtScreen") or {}) do
+                if sc:IsValid() and sc:IsInViewport() and isHud(sc) then up = true end
+            end
+        end)
+        if not up then return end
+        log("daynight: the world was already up (a reload) - the save's time again")
+        pcall(restore)
+        pcall(worldUp)
     end)
 end
 
