@@ -160,19 +160,33 @@ end
 -- not the cats about; from knee height down (from 3 m up it found the branches overhead and put him in a tree - a cat
 -- moves a few cm a step, so knee height climbs any slope).
 local kismet
+-- the ground under a point - open water isn't ground (the water surfaces answer queries since WaCa Hunting's wading -
+-- a cat would walk on the river: the trace goes on below them), frozen water is (WaCa Clan Life's ice: cats cross it)
 local function groundAt(a, x, y, z)
     kismet = kismet or StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
-    local hit = {}
-    local ok, yes = pcall(function()
-        crumb("LineTrace", pathOf(a))
-        return kismet:LineTraceSingleForObjects(a, { X = x, Y = y, Z = z + 50 }, { X = x, Y = y, Z = z - 400 }, { 0 },
-            false, { a }, 0, hit, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
-    end)
-    if not (ok and yes) then return nil end
-    local gz
-    pcall(function() gz = hit.ImpactPoint.Z end)
-    if not gz then pcall(function() gz = hit.Location.Z end) end
-    return gz
+    local top = z + 50
+    for _ = 1, 3 do
+        local hit = {}
+        local ok, yes = pcall(function()
+            crumb("LineTrace", pathOf(a))
+            return kismet:LineTraceSingleForObjects(a, { X = x, Y = y, Z = top }, { X = x, Y = y, Z = z - 400 }, { 0 },
+                false, { a }, 0, hit, true, { R = 0, G = 0, B = 0, A = 0 }, { R = 0, G = 0, B = 0, A = 0 }, 0)
+        end)
+        if not (ok and yes) then return nil end
+        local gz
+        pcall(function() gz = hit.ImpactPoint.Z end)
+        if not gz then pcall(function() gz = hit.Location.Z end) end
+        if not gz then return nil end
+        local water = false
+        pcall(function()
+            local c = hit.Component
+            if tostring(c):match("^FWeakObjectPtr") then c = c:Get() end
+            water = c:GetMaterial(0):GetFName():ToString():find("^MI_WC_Water") ~= nil
+        end)
+        if not water then return gz end
+        top = gz - 2
+    end
+    return nil
 end
 local function onGround(m, a, x, y, z)
     if m.lift == nil then
