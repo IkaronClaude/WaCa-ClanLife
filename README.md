@@ -87,7 +87,8 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   (actor path, X, Y, Z: that cat walks there, stays a while, walks home), and `PlayScene`
   (step lines as in `clanevents.ini`, joined by `|`, e.g. `Groups: Prey|Wait: 3|Release`) to play a scene now.
 - **The clan's own patrols** (`patrols.ini`): camp cats head out to the border together, stop at each point and
-  come home - meet them out there and they stop, and the one leading says a word to you (`lines.ini [PatrolMeet]`).
+  come home - meet them out there and they stop, and each cat says a word to you in turn (`lines.ini [PatrolMeet]` for the one
+  leading, `[PatrolMeet.Member]` for the others, a cat's own `[PatrolMeet.<Name>]`, by leader `[PatrolMeet.LedBy.<Name>]`).
 - **New things to say** (`lines.ini`): lines per cat role and time of day, and **dialogue by story day** - a queen says
   one of three lines each day of a week, a new one each day, no repeats until all were said.
 - **Clan activities** (`activities.ini`): clanmates sit, nap, sniff around or play-fight in camp; press G next to a story

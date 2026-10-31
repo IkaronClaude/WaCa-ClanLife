@@ -40,7 +40,7 @@ local jobs = { on = true, hunters = 1, radius = 800, stay = { 60, 120 }, lines =
 -- PATROLS on foot (tickets.md "Patrol encounters", operator 2026-10-28): the clan's patrols walk with this mover (the
 -- AI walks they had fail on this map) - and meeting one out there stops it a moment: its leader speaks (a subtitle),
 -- the rest wait. Lines: lines.ini [PatrolMeet] Line1... ({PLAYER}). groups[id] = { cats = { path }, met, onBack, left }
-local patrols = { groups = {}, nextId = 0, radius = 700, pause = 8, lines = {} }
+local patrols = { groups = {}, nextId = 0, radius = 700, pause = 8, lines = {}, sections = {} }
 local party = { follow = true, distance = 40, side = 70, spread = 160, catchUp = 2500, names = nil, outside = false, sneaking = false }
 local movers = {}           -- named cat path -> { home, homeRot, legs = { {X,Y,Z} ... }, leg, state, wait, kind, name }
 local lastMoved = {}        -- name -> the turn it last moved
@@ -177,12 +177,7 @@ local function groundAt(a, x, y, z)
         pcall(function() gz = hit.ImpactPoint.Z end)
         if not gz then pcall(function() gz = hit.Location.Z end) end
         if not gz then return nil end
-        local water = false
-        pcall(function()
-            local c = hit.Component
-            if tostring(c):match("^FWeakObjectPtr") then c = c:Get() end
-            water = c:GetMaterial(0):GetFName():ToString():find("^MI_WC_Water") ~= nil
-        end)
+        local water = (WaCa.HitMaterialName(hit) or ""):find("^MI_WC_Water") ~= nil
         if not water then return gz end
         top = gz - 2
     end
@@ -720,10 +715,35 @@ local function tick()
                     playWalk(ca, false)
                 end
             end
-            local line = patrols.lines[math.random(#patrols.lines)]
-            line = line:gsub("{PLAYER}", WaCa.PlayerName and WaCa.PlayerName() or "you")
-            log("walkers: patrol %d meets your cat - %s: %s", m.patrol, m.name, line)
-            WaCa.Emit("ShowLine", m.name .. ": " .. line)
+            -- (each cat says one line, in turn: its own [PatrolMeet.<Name>], else by who leads ([PatrolMeet.LedBy.<leader>]
+            -- for the others), else the leader's [PatrolMeet] / the others' [PatrolMeet.Member]; nothing fits = silent)
+            local player = WaCa.PlayerName and WaCa.PlayerName() or "you"
+            local said, used = 0, {}
+            for i, cp in ipairs(g.cats) do
+                local cm = movers[cp]
+                local who = cm and cm.name or "?"
+                local pool = patrols.sections[who]
+                if not (pool and #pool > 0) then
+                    if i == 1 then pool = patrols.lines
+                    else
+                        pool = patrols.sections["LedBy." .. m.name]
+                        if not (pool and #pool > 0) then pool = patrols.sections["Member"] end
+                    end
+                end
+                if pool and #pool > 0 then
+                    -- (not a line another cat of this patrol just said, while the pool has others)
+                    local fresh = {}
+                    for _, l in ipairs(pool) do if not used[l] then fresh[#fresh + 1] = l end end
+                    local raw = (#fresh > 0 and fresh or pool)[math.random(#fresh > 0 and #fresh or #pool)]
+                    used[raw] = true
+                    local line = raw:gsub("{PLAYER}", player):gsub("{LEADER}", m.name)
+                    local delay = said * 3000
+                    said = said + 1
+                    log("walkers: patrol %d meets your cat - %s%s: %s", m.patrol, who, i == 1 and " (leads)" or "", line)
+                    if delay == 0 then WaCa.Emit("ShowLine", who .. ": " .. line)
+                    else ExecuteInGameThreadWithDelay(delay, function() WaCa.Emit("ShowLine", who .. ": " .. line) end) end
+                end
+            end
         elseif m.hunting and not m.warned and not paused and #jobs.lines > 0 then
             -- (your cat too close to a hunting clanmate: a word, once per hunt)
             pcall(function()
@@ -1115,9 +1135,18 @@ function Walkers.Init(c)
         if k:match("^Line%d*$") and jj[k] ~= "" then jobs.lines[#jobs.lines + 1] = jj[k] end
     end
     local lini = WaCa.ReadContent(c.modDir .. "/config/lines.ini", "lines") or {}
-    local pm = lini["PatrolMeet"] or {}
-    for _, k in ipairs(pm.__order or {}) do
-        if k:match("^Line%d*$") and pm[k] ~= "" then patrols.lines[#patrols.lines + 1] = pm[k] end
+    local function linesOf(sec)
+        local out = {}
+        for _, k in ipairs((sec or {}).__order or {}) do
+            if k:match("^Line%d*$") and sec[k] ~= "" then out[#out + 1] = sec[k] end
+        end
+        return out
+    end
+    patrols.lines = linesOf(lini["PatrolMeet"])
+    -- (the rest of the patrol: [PatrolMeet.Member], a cat's own [PatrolMeet.<Name>], by leader [PatrolMeet.LedBy.<Name>])
+    for name, sec in pairs(lini) do
+        local rest = type(name) == "string" and name:match("^PatrolMeet%.(.+)$")
+        if rest then patrols.sections[rest] = linesOf(sec) end
     end
     if #patrols.lines == 0 then
         patrols.lines = { "{PLAYER}! All quiet along the border so far.", "We're marking the border - keep your eyes open.",
