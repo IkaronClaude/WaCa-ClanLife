@@ -60,6 +60,9 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   beside you when they fall far behind or get stuck, and walk back to their spots when you come into camp. They are the
   ones who comment on your hunts. They wait while a fight is on (the game brings its own party to the fight). The party
   is the story's, read from the game's save.
+- **Clanmates do their jobs** (`walkers.ini [Jobs]`): when a morning or an afternoon begins, a camp cat walks out to
+  hunt where the game puts prey, stays a while and walks home - come too close while it hunts and it asks you to give
+  it space. Other mods: the `NpcHunt` event (n cats).
 - **The camp's named cats move about** (`walkers.ini`): the game's nameless walking cats are taken out; instead, each
   third of the day a few of the camp's named cats move (the ones that moved longest ago first), on the game's own walk
   animation, following the ground. Plain warriors, apprentices and elders roam across camp (a den's front, the
