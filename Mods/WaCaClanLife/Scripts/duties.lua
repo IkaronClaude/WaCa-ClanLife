@@ -1950,6 +1950,30 @@ function Duties.Init(c)
         end
     end
     table.sort(cfg.clanEvents, function(a, b) return a.name < b.name end)
+    -- (WHEN = EVENT:<name> - a clan event on something that happens rather than a third: WaCa Clan Life's ice
+    -- "FellThroughIce", Hunting's "HuntCaught", any mod's event - a story pack reacts with data alone. Library exercise
+    -- 2026-10-31: a fall through the ice had no way into a pack's scene)
+    local onEvent = {}
+    for _, e in ipairs(cfg.clanEvents) do
+        local ev = e.when:match("^Event:%s*(.+)$")
+        if ev then onEvent[ev] = onEvent[ev] or {} table.insert(onEvent[ev], e) end
+    end
+    for ev, list in pairs(onEvent) do
+        WaCa.On(ev, function()
+            ExecuteInGameThread(function()
+                for _, e in ipairs(list) do
+                    if not (e.once and eventsDone[e.name]) and Events.Check(e.require) then
+                        local lever = eventLever(e)
+                        if lever >= 1 or (lever == 0 and math.random() * 100 < e.chance) then
+                            log("duties: %s - the event %s", ev, e.name)
+                            if e.once then eventsDone[e.name] = true end
+                            Events.Run(e.steps, function() end, {})
+                        end
+                    end
+                end
+            end)
+        end)
+    end
     pcall(function() cfg.restKey = (WaCa.ReadIni(c.modDir .. "/config/timeskip.ini") or {}).TimeSkip.RestKey end)
     cfg.restKey = cfg.restKey or ""
     Events.Provide("Standing", function() return standing end)
