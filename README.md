@@ -122,6 +122,8 @@ They go in at the loop's hook points:
 - `duties.ini` `[Third.<Third>]` `Start1...` / `Event1...`, `[Assign.<Task>]` (how the deputy gives it), `[NightWatch]`;
 - `clanevents.ini` `[Event.<Name>]` - `When` (a third, or `Event:<name>` - when that event happens: `FellThroughIce`,
   `HuntCaught`, any mod's) / `Chance` / `Day` / `Every` / `Once` / `Order` / `Require` + steps;
+  a value from another variable (`Set: LostKit.Until = Day + 2`) and conditions naming one (`Day <= LostKit.Until`)
+  make missable side threads over several days (the example pack's lost kit);
 - `gatherings.ini` `[Announce]` / `[Chosen]` / `[NotChosen]` / `[Attend]` / `[StayBehind]`;
 - `days.ini` per story day: `<Third>Start`, `<Third>` beats, `<Third>Duty`, `NightDuty = Hunt` for a night hunt,
   `Gathering = Yes`, `GatheringPick = Chosen`, and when the story moves on (`Advance = Always / Duties / Rank:Warrior` -

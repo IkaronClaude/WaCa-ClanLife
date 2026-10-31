@@ -1286,6 +1286,9 @@ function Events.Var(name)
     return v
 end
 
+-- is there such a variable (a story variable set, or a provider)? (Events.Var answers 0 for any unknown name)
+function Events.Has(name) return providers[name] ~= nil or vars[name] ~= nil end
+
 function Events.SetVar(name, value)
     local n = tonumber(value)
     if n then value = n end
@@ -1307,6 +1310,10 @@ function Events.Check(text)
         local name, op, value = cond:match("^%s*([%w%.%_]+)%s*([<>=!]+)%s*(.-)%s*$")
         if name and OPS[op] then
             local have, want = Events.Var(name), tonumber(value) or value
+            -- (the other side may name a variable too - "Day <= LostKit.Until"; text that names none stays text)
+            if type(want) == "string" and want:match("^[%a][%w%.%_]*$") and Events.Has(want) then
+                want = tonumber(Events.Var(want)) or Events.Var(want)
+            end
             if type(have) ~= type(want) then have, want = tostring(have), tostring(want) end
             local ok, r = pcall(OPS[op], have, want)
             if not (ok and r) then return false end
@@ -1348,6 +1355,12 @@ local function runStep(s, ctx, nextStep, stop)
     local k = s.kind
     if k == "Set" then
         local name, value = tostring(s.value):match("^%s*([%w%.%_]+)%s*=%s*(.-)%s*$")
+        -- (a value from another variable, + / - a number: "Set: LostKit.Until = Day + 2" - a side thread's deadline.
+        -- Library exercise 2026-10-31: a value could only be a literal)
+        local from, sign, n = tostring(value or ""):match("^([%a][%w%.%_]*)%s*([%+%-])%s*([%d%.]+)$")
+        if not from then from = tostring(value or ""):match("^([%a][%w%.%_]*)$") end
+        local base = from and Events.Has(from) and tonumber(Events.Var(from))
+        if base then value = sign and (sign == "+" and base + tonumber(n) or base - tonumber(n)) or base end
         if name then Events.SetVar(name, value) end
         nextStep()
     elseif k == "Add" then
