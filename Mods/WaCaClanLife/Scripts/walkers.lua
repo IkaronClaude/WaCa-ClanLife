@@ -217,26 +217,72 @@ end
 -- spot it sniffs for prey, drops into a stalk, leaps - and catches something by chance ([Jobs] CatchChance %), a bite
 -- if it does; again a while later, while it hunts there. The game's own montages (sniffing, sneak-attack start, the
 -- hunting leap, the bite). Events: NpcHuntTry(name, caught).
+-- the nearest live prey (the game's prey creatures - SwtAdventurePreyComponent's owners, shown) within `reach` of a cat
+local function preyNear(a, reach)
+    local best, bd
+    pcall(function()
+        local q = a:K2_GetActorLocation()
+        for _, comp in ipairs(FindAllOf("SwtAdventurePreyComponent") or {}) do
+            pcall(function()
+                local prey = comp:GetOwner()
+                if not (prey and prey:IsValid()) or prey.bHidden then return end
+                local p = prey:K2_GetActorLocation()
+                local d = (p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2
+                if d <= reach ^ 2 and (not bd or d < bd) then best, bd = prey, d end
+            end)
+        end
+    end)
+    return best
+end
+
 local function huntLoop(path)
     local m = movers[path]
     if not m or not m.hunting or m.state ~= "wait" then return end
     local a = StaticFindObject(path)
     if not (a and a:IsValid()) then return end
+    -- (REAL PREY when there is some near its spot: it turns to it, leaps at it, and catches it - gone, as the player's
+    -- catch would be (WaCa Hunting: PreyTaken) - or scares it off (PreyScare). None near: the hunt is acted out.)
+    local target = preyNear(a, 1500)
+    local targetPath = target and (target:GetFullName():gsub("^%S+ ", "")) or nil
     local steps = {
         { 0, function() playMontage(a, "Montages/AM_Interact_Sniffing") end },
-        { 3500, function() playMontage(a, "Montages/AM_SneakAttack_Start") end },
+        { 3500, function()
+            local prey = targetPath and StaticFindObject(targetPath)
+            if prey and prey:IsValid() then                          -- (it faces its prey)
+                pcall(function()
+                    local q, p = a:K2_GetActorLocation(), prey:K2_GetActorLocation()
+                    a:K2_SetActorRotation({ Pitch = 0, Yaw = math.deg(math.atan(p.Y - q.Y, p.X - q.X)), Roll = 0 }, true)
+                end)
+            end
+            playMontage(a, "Montages/AM_SneakAttack_Start")
+        end },
         { 5500, function()
             playMontage(a, "Combat/OffensiveStance/Montages/AM_WC_Hunting_Leap")
-            pcall(function()                                            -- (the leap carries it forward)
+            pcall(function()                                            -- (the leap carries it forward - onto its prey)
                 local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+                local prey = targetPath and StaticFindObject(targetPath)
+                local reach = 150
+                if prey and prey:IsValid() then
+                    local p = prey:K2_GetActorLocation()
+                    reach = math.min(400, math.max(0, math.sqrt((p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2) - 40))
+                end
                 local f = math.rad(r.Yaw)
-                a:K2_SetActorLocation({ X = q.X + math.cos(f) * 150, Y = q.Y + math.sin(f) * 150, Z = q.Z }, true, {}, true)
+                a:K2_SetActorLocation({ X = q.X + math.cos(f) * reach, Y = q.Y + math.sin(f) * reach, Z = q.Z }, true, {}, true)
             end)
         end },
         { 7500, function()
             local caught = math.random() * 100 < jobs.catchChance
             if caught then playMontage(a, "Montages/AM_Interact_Bite_1") end
-            log("walkers: %s %s", m.name, caught and "catches prey at its spot" or "pounces and misses")
+            local prey = targetPath and StaticFindObject(targetPath)
+            local real = prey and prey:IsValid()
+            if real and caught then
+                WaCa.Emit("PreyTaken", targetPath, m.name)
+            elseif real then
+                local q = a:K2_GetActorLocation()
+                WaCa.Emit("PreyScare", targetPath, q.X, q.Y)
+            end
+            log("walkers: %s %s%s", m.name, caught and "catches prey at its spot" or "pounces and misses",
+                real and (" - " .. prey:GetFName():ToString()) or " (no prey near - acted out)")
             WaCa.Emit("NpcHuntTry", m.name, caught)
         end },
     }

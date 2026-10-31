@@ -67,7 +67,8 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   Gathering - a new line each day, from every set whose `Require` holds; story packs add their own sets.
 - **Clanmates do their jobs** (`walkers.ini [Jobs]`): when a morning or an afternoon begins, a camp cat walks out to
   hunt where the game puts prey, stays a while and walks home - come too close while it hunts and it asks you to give
-  it space. Out there it really hunts - sniffs, stalks, leaps and now and then catches something (`CatchChance`).
+  it space. Out there it really hunts - sniffs, stalks, leaps at the real prey near its spot and now and then catches
+  it (`CatchChance`; with WaCa Hunting the prey is gone, or bolts on a miss).
   Other mods: the `NpcHunt` event (n cats), `NpcHuntTry(name, caught)`.
 - **The camp's named cats move about** (`walkers.ini`): the game's nameless walking cats are taken out; instead, each
   third of the day a few of the camp's named cats move (the ones that moved longest ago first), on the game's own walk
