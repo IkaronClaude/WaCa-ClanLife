@@ -377,8 +377,9 @@ function Walkers.Unescort(paths, why)
 end
 
 -- a patrol of n of the camp's plain cats: the points one after another (a short stop at each - marking), then each
--- home; onBack() when the last is home. Returns its id and the cats' names, or nil.
-function Walkers.Patrol(n, points, why, onBack)
+-- home; onBack() when the last is home. opts.stay = seconds they stay at the last point (a Gathering: the island).
+-- Returns its id and the cats' names, or nil.
+function Walkers.Patrol(n, points, why, onBack, opts)
     if not looping or (n or 0) <= 0 or #(points or {}) == 0 then return nil end
     local mid
     pcall(function() mid = Duties.Camp().middle end)
@@ -409,13 +410,14 @@ function Walkers.Patrol(n, points, why, onBack)
         legs[#legs + 1] = home
         local path = pathOf(a)
         movers[path] = { home = home, homeRot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll }, legs = legs, leg = 1,
-                         state = "wait", wait = 0.5 * i, kind = "patrol", patrol = id, lead = i == 1, name = nameOf(a) or "?" }
+                         state = "wait", wait = 0.5 * i, kind = "patrol", patrol = id, lead = i == 1, name = nameOf(a) or "?",
+                         stayLast = opts and opts.stay or nil }
         g.cats[#g.cats + 1] = path
         names[#names + 1] = movers[path].name
     end
     g.left = #g.cats
     patrols.groups[id] = g
-    log("walkers: patrol %d - %s head out to %d border point(s) (%s)", id, table.concat(names, ", "), #points, why or "the clan")
+    log("walkers: patrol %d - %s head out to %d point(s) (%s)", id, table.concat(names, ", "), #points, why or "the clan")
     return id, names
 end
 
@@ -680,6 +682,10 @@ local function tick()
                     m.leg = m.leg + 1
                     m.state = "wait"
                     m.wait = (m.leg > #m.legs) and 0 or (cfg.stay[1] + math.random() * (cfg.stay[2] - cfg.stay[1]))
+                    if m.stayLast and m.leg == #m.legs then
+                        m.wait = m.stayLast
+                        if m.lead then log("walkers: %s and the others stay %.0f s", m.name, m.stayLast) end
+                    end
                     if m.job and m.leg == 2 then
                         m.wait = jobs.stay[1] + math.random() * (jobs.stay[2] - jobs.stay[1])
                         m.hunting = true

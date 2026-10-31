@@ -13,7 +13,8 @@ local Gathering = {}
 
 local WaCa, log, Events, Days, DayNight
 local cfg = { on = false, first = 7, every = 28, third = "Evening", announce = "Morning", minRank = nil, base = 60,
-              perStanding = 2, perFavour = 5, favourVar = "LeaderFavour", banVar = "GatheringBan", scenes = {} }
+              perStanding = 2, perFavour = 5, favourVar = "LeaderFavour", banVar = "GatheringBan", scenes = {},
+              party = 4, place = "I-", stay = 150 }
 local today                  -- { day, chosen } of a Gathering day once announced
 
 local function rankValue(name)
@@ -62,6 +63,10 @@ function Gathering.Init(c)
     cfg.third = (g.Third or "") ~= "" and g.Third or cfg.third
     cfg.announce = (g.AnnounceThird or "") ~= "" and g.AnnounceThird or cfg.announce
     cfg.minRank = (g.MinRank or "") ~= "" and g.MinRank or nil
+    local t = ini["Travel"] or {}
+    cfg.party = math.max(0, math.floor(tonumber(t.Party or "") or cfg.party))
+    cfg.place = (t.Place or "") ~= "" and t.Place or cfg.place
+    cfg.stay = tonumber(t.Stay or "") or cfg.stay
     cfg.base = tonumber(g.Base or "") or cfg.base
     cfg.perStanding = tonumber(g.PerStanding or "") or cfg.perStanding
     cfg.perFavour = tonumber(g.PerFavour or "") or cfg.perFavour
@@ -74,6 +79,10 @@ function Gathering.Init(c)
     if #cfg.scenes.StayBehind == 0 then cfg.scenes.StayBehind = { { kind = "Hook", value = "GatheringStayBehind" } } end
     log("gathering: %s (from day %d, every %d days; announced in the %s, held in the %s)", cfg.on and "on" or "off",
         cfg.first, cfg.every, cfg.announce:lower(), cfg.third:lower())
+    -- (other mods - a story's own Gathering: its party on the way now - WaCa.Emit("GatheringTravel", chosen))
+    WaCa.On("GatheringTravel", function(chosen)
+        ExecuteInGameThread(function() pcall(Gathering.Travel, chosen == true or chosen == 1 or chosen == "1") end)
+    end)
     if not cfg.on then return end
     Events.Provide("Gathering.Today", function() return today and 1 or 0 end)
     -- the announcement: when the AnnounceThird of a Gathering day begins (the clan loop's ClanThirdStart hook)
@@ -103,8 +112,33 @@ function Gathering.Init(c)
         Events.SetVar("Gathering.Count", (tonumber(Events.Var("Gathering.Count")) or 0) + (chosen and 1 or 0))
         log("gathering: day %d - %s", day, chosen and "your cat goes to the Gathering" or "your cat stays behind")
         WaCa.Emit("GatheringHeld", day, chosen)
+        pcall(Gathering.Travel, chosen)
         Events.Run(chosen and cfg.scenes.Attend or cfg.scenes.StayBehind, continue, ctx)
     end)
+end
+
+-- the clan's Gathering party on its way (gatherings.ini [Travel]): chosen - Party cats walk with you (you go to the
+-- Island yourself; they go back to their spots when you're back in camp); not chosen - they set off without you to the
+-- Island (the game's zone, Place = its code), stay Stay seconds and come home. The walkers' mover (walkers.lua).
+function Gathering.Travel(chosen)
+    if (cfg.party or 0) <= 0 then return end
+    local ok, Walkers = pcall(require, "walkers")
+    if not ok then return end
+    if chosen then
+        Walkers.Escort(cfg.party, "the Gathering")
+        return
+    end
+    local place = require("duties").ZonePlace(cfg.place)
+    if not place then
+        log("gathering: no zone %s for the Gathering's place - the party stays in camp", cfg.place)
+        return
+    end
+    local id, names = Walkers.Patrol(cfg.party, { place }, "the Gathering", function()
+        log("gathering: the Gathering party is back")
+        WaCa.Emit("GatheringPartyBack")
+    end, { stay = cfg.stay })
+    log("gathering: %s set(s) off for the Gathering without you (%.0f %.0f)", id and table.concat(names, ", ") or "nobody",
+        place.X, place.Y)
 end
 
 return Gathering
