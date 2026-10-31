@@ -2026,7 +2026,12 @@ function Duties.Init(c)
     -- the turn-ins: the game's own fresh-kill contribution (its achievements manager hears of every one), and a talk
     -- with the deputy (the dialogue screen's NpcRef is the cat talked to)
     WaCa.Watch("OnContributeFreshKill", "/Script/Wrc.WrcAchievementsManager", "WaCaPileContribution", "post")
-    WaCa.On("WaCaPileContribution", function() turnedIn("Pile") end)
+    WaCa.On("WaCaPileContribution", function()
+        if not turnedIn("Pile") then
+            log("duties: fresh-kill onto the pile - no task waits for it now (%s)",
+                today and today.task and (today.task.kind .. ", " .. tostring(today.stage)) or "no task")
+        end
+    end)
     -- sleeping: your cat uses a nest (the game's own sleep spot) at night - the night passes
     WaCa.Watch("OnInteracted", "/Script/SwtAdventure.SwtAdventureInteractableActor", "WaCaInteracted", "post")
     WaCa.On("WaCaInteracted", function(actor)
