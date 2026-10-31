@@ -8,7 +8,8 @@
 local Ice = {}
 
 local WaCa, log
-local cfg = { on = true, season = "Leaf-bare", lake = true, river = 50, lakeSize = 10000 }
+local cfg = { on = true, season = "Leaf-bare", lake = true, river = 50, lakeSize = 10000, thin = 15, thinSteps = 6,
+              refreeze = 60, crackLine = "The ice cracks beneath your paws!" }
 local frozen = {}                   -- plane path -> { material = path, collision = int }
 local isFrozen = false
 local forced                        -- true / false: frozen / thawed whatever the season (a story, another mod)
@@ -192,6 +193,46 @@ end
 
 function Ice.Frozen() return isFrozen end
 
+-- THIN ICE (the operator's "falling through ice"): ThinChance % of the frozen river stretches are thin - the same
+-- ones every winter. ThinSteps footsteps on one and it gives way under the cat: that stretch is water again, the cat
+-- drops in (wading takes over), a line on screen; it freezes over again after Refreeze seconds. Only where there is
+-- ground below (never over a hole). Event FellThroughIce(stretch path) - a story's rescue / injury scene goes there.
+local onThin = { path = nil, steps = 0 }
+local cracked = {}
+local function onStep(_, mesh)
+    if not isFrozen or cfg.thin <= 0 then return end
+    local pawn, on = playerOn()
+    if not (pawn and mesh and mesh:IsValid()) then return end
+    local ok, mine = pcall(function() return mesh:GetOwner():GetAddress() == pawn:GetAddress() end)
+    if not (ok and mine) then return end
+    if not on or cracked[on] or not picked(on .. "#thin", cfg.thin) then
+        onThin.path, onThin.steps = nil, 0
+        return
+    end
+    if onThin.path ~= on then onThin.path, onThin.steps = on, 0 end
+    onThin.steps = onThin.steps + 1
+    if onThin.steps < cfg.thinSteps or not groundBelow(pawn) then return end
+    -- (it gives way)
+    local c = StaticFindObject(on)
+    if not (c and c:IsValid()) then return end
+    pcall(function() c:SetCollisionResponseToChannel(2, 0) end)
+    cracked[on] = true
+    onThin.path, onThin.steps = nil, 0
+    local where = on
+    pcall(function() where = c:GetOwner():GetFName():ToString() end)
+    log("ice: the thin ice gives way under your cat - %s", where)
+    WaCa.Emit("ShowLine", cfg.crackLine, 4)
+    WaCa.Emit("FellThroughIce", on)
+    ExecuteInGameThreadWithDelay(math.floor(cfg.refreeze * 1000), function()
+        cracked[on] = nil
+        local again = StaticFindObject(on)
+        if isFrozen and frozen[on] and again and again:IsValid() then
+            pcall(function() again:SetCollisionResponseToChannel(2, 2) end)
+            log("ice: the hole froze over again")
+        end
+    end)
+end
+
 function Ice.Init(c)
     WaCa, log = c.WaCa, c.log
     local ini = WaCa.ReadContent(c.modDir .. "/config/weather.ini", "weather") or {}
@@ -202,7 +243,12 @@ function Ice.Init(c)
     cfg.river = math.max(0, math.min(100, tonumber(s.River or "") or cfg.river))
     log("ice: %s (in %s: the lake %s, %d%% of the river)", cfg.on and "on" or "off", cfg.season, cfg.lake and "freezes" or "stays open",
         cfg.river)
+    cfg.thin = math.max(0, math.min(100, tonumber(s.ThinChance or "") or cfg.thin))
+    cfg.thinSteps = math.max(1, tonumber(s.ThinSteps or "") or cfg.thinSteps)
+    cfg.refreeze = math.max(5, tonumber(s.Refreeze or "") or cfg.refreeze)
+    cfg.crackLine = (s.CrackLine or "") ~= "" and s.CrackLine or cfg.crackLine
     if not cfg.on then return end
+    WaCa.On("CatStep", onStep)
     WaCa.On("SeasonChanged", function() ExecuteInGameThread(function() Ice.Apply("the season turned") end) end)
     WaCa.On("HourChanged", function() if isFrozen then ExecuteInGameThread(function() Ice.Apply("new stretches about") end) end end)
     WaCa.On("ScreenShown", function(screen)

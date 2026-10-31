@@ -54,8 +54,10 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
 - **Each clan's camp** is found from the game's own camp zone (`R-05`, `T-10` ...) - the loop knows when you're home.
 - **Frozen water in leaf-bare** (`weather.ini [Ice]`): the lake and half of the river's stretches (the same ones every
   winter) freeze - still, pale ice your cat walks across; they thaw when the season turns. Thawing under your cat drops
-  it onto the riverbed - or, over deep water with nothing below, the ice under it holds until it steps off. Other mods /
-  a story: `WaCa.Emit("Freeze", true / false)`; events `IceFrozen`, `IceThawed`.
+  it onto the riverbed - or, over deep water with nothing below, the ice under it holds until it steps off. Some
+  stretches are THIN ice (`ThinChance`): walk on one a few steps and it gives way - your cat drops into the water ("The
+  ice cracks beneath your paws!"); the hole freezes over again later. Other mods / a story: `WaCa.Emit("Freeze", true /
+  false)`; events `IceFrozen`, `IceThawed`, `FellThroughIce` (a rescue or injury scene goes there).
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
   builds on (rogues attack the camp while half the clan is away...). The Gathering party is seen on its way
