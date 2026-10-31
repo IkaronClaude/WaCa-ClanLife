@@ -208,14 +208,16 @@ local function newSpell(why)
     setWeather(rollWeather(), math.random(cfg.minHours, math.max(cfg.minHours, cfg.maxHours)), why)
 end
 
-local function updateSeason(why)
+-- (keepWeather: a save's own weather comes right after - no new spell first: VM 2026-10-30, a load rolled "Overcast
+-- for 3 h (new season)" and then restored "Overcast for 7 h (as saved)")
+local function updateSeason(why, keepWeather)
     local now = seasonFor(DayNight.Day())
     if now == season then return end
     local previous = season
     season = now
     log("weather: the season is %s (%s)", season, why)
     WaCa.Emit("SeasonChanged", season, previous)
-    newSpell("new season")
+    if not keepWeather then newSpell("new season") end
 end
 
 function Weather.Season() return cfg.on and season or nil end
@@ -252,8 +254,9 @@ local function restore()
     if not slotNow or restoredFor == slotNow then return end
     restoredFor = slotNow
     local w = (WaCa.ReadIni(sidecar() or "") or {})["Weather"] or {}
-    updateSeason("save loaded")
-    if w.Kind and cfg.weathers[w.Kind] then
+    local saved = w.Kind and cfg.weathers[w.Kind]
+    updateSeason("save loaded", saved)
+    if saved then
         setWeather(w.Kind, math.max(1, tonumber(w.HoursLeft or "") or cfg.minHours), "as saved")
     end
 end
@@ -307,8 +310,19 @@ function Weather.Init(c)
         hoursLeft = hoursLeft - 1
         if hoursLeft <= 0 then newSpell("the spell is over") end
     end)
+    -- (other mods and story files: a weather now - WaCa.Emit("SetWeather", "Rain", 6))
+    WaCa.On("SetWeather", function(name, hours)
+        ExecuteInGameThread(function()
+            if not Weather.Set(tostring(name), tonumber(hours)) then log("weather: SetWeather - no weather %s", tostring(name)) end
+        end)
+    end)
     WaCa.On("DayStarted", function() updateSeason("a new day") end)
-    WaCa.On("DayRestored", function() updateSeason("save loaded") end)
+    -- (the save's own weather first - restore() enters the season without a spell of its own; then nothing is left
+    -- to roll: VM 2026-10-31, the day's restore rolled "Clear (new season)" before the saved "Overcast")
+    WaCa.On("DayRestored", function()
+        restore()
+        updateSeason("save loaded")
+    end)
     WaCa.On("GameSaved", function()
         restore()
         keep()
