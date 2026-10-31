@@ -246,6 +246,12 @@ end
 -- sneak) until the patrol is done or the day ends
 local function companionsJoin(n)
     if n <= 0 then return nil end
+    -- (the walkers' temporary party - it walks on any ground; the AI follow below is the fallback)
+    local ok, paths = pcall(function() return require("walkers").Escort(n, "your patrol") end)
+    if ok and paths and #paths > 0 then
+        log("duties: %d clanmate(s) join your patrol", #paths)
+        return { escort = paths }
+    end
     local Follow = require("follow")
     local cats = Follow.Nearest(n, cfg.companionRadius)
     if #cats == 0 then return nil end
@@ -254,7 +260,8 @@ local function companionsJoin(n)
 end
 
 local function companionsLeave(group)
-    if group then require("follow").Release(group) end
+    if group and group.escort then pcall(function() require("walkers").Unescort(group.escort, "the patrol is over") end)
+    elseif group then require("follow").Release(group) end
 end
 
 local function removeMarker(point)

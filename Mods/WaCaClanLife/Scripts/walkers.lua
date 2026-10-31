@@ -265,7 +265,10 @@ local function partyActors()
         local best, bd
         for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
             pcall(function()
-                if not a:IsValid() then return end
+                -- (never a PARKED filler copy - the undrawn "Nightheart" filler 162 m off was taken once and moving it
+                -- crashed the game, VM 2026-10-31; the camp's own fillers are its plain warriors, drawn - those are fine;
+                -- a quest cat drawn or not: the party's camp cats are far from a cat loaded in the forest)
+                if not a:IsValid() or (a:GetClass():GetFName():ToString():find("Filler") and not shown(a)) then return end
                 if member.role and enumName("/Script/SwtQuest.ENarrativeRole", a.narrativeRole, roleCache) ~= member.role then return end
                 if member.name and nameOf(a) ~= member.name then return end
                 local clan = enumName("/Script/SwtQuest.EClanType", a.ClanType, clanCache)
@@ -310,6 +313,60 @@ local function partyHome(why)
     end
     if #back > 0 then log("walkers: party - %s go(es) back to their spots (%s)", table.concat(back, ", "), why) end
 end
+-- A TEMPORARY PARTY (tickets.md 7, patrols): n of the camp's plain cats (warriors, apprentices, elders - roamers) nearest
+-- your cat walk with you like the party - behind it, a row back - till Walkers.Unescort or your cat comes back into
+-- camp. (The patrol's companions were AI walks before - field cats' AI moves fail on this map: VM 2026-10-30.)
+-- Returns their object paths.
+local looping = false             -- the movers' loop runs (walkers or the party on)
+function Walkers.Escort(n, why)
+    if not looping then return {} end
+    local p
+    pcall(function() p = playerPawn():K2_GetActorLocation() end)
+    if not p or (n or 0) <= 0 then return {} end
+    local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
+    local near = {}
+    for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+        pcall(function()
+            if not (a:IsValid() and shown(a)) then return end            -- (drawn only: never a parked filler)
+            local path = pathOf(a)
+            if movers[path] and movers[path].follow then return end
+            if kindOf(a, myClan) ~= "roamer" then return end
+            local q = a:K2_GetActorLocation()
+            local d = (q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2
+            if d <= 4000 ^ 2 then near[#near + 1] = { a = a, d = d } end
+        end)
+    end
+    table.sort(near, function(x, y) return x.d < y.d end)
+    local paths, names = {}, {}
+    for i = 1, math.min(n, #near) do
+        local a = near[i].a
+        local path = pathOf(a)
+        local old = movers[path]
+        local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+        movers[path] = { follow = true, escort = true, slot = 2 + i, name = nameOf(a) or "?",
+                         home = old and old.home or { X = q.X, Y = q.Y, Z = q.Z },
+                         homeRot = old and old.homeRot or { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll } }
+        paths[#paths + 1] = path
+        names[#names + 1] = movers[path].name
+    end
+    log("walkers: %s walk(s) with you (%s)", #names > 0 and table.concat(names, ", ") or "nobody", why or "a temporary party")
+    return paths
+end
+function Walkers.Unescort(paths, why)
+    local back = {}
+    for _, path in ipairs(paths or {}) do
+        local m = movers[path]
+        if m and m.follow and m.escort then
+            m.follow, m.escort, m.goingHome = nil, nil, true
+            m.legs, m.leg, m.state, m.gait = { m.home }, 1, "walk", nil
+            local a = StaticFindObject(path)
+            if a and a:IsValid() then playWalk(a, true) end
+            back[#back + 1] = m.name
+        end
+    end
+    if #back > 0 then log("walkers: %s go(es) back to their spots (%s)", table.concat(back, ", "), why or "done") end
+end
+
 -- the party cats walking with you now (actors) - Clan Life's hunt comments come from them
 function Walkers.Party()
     local out = {}
@@ -378,6 +435,7 @@ local function followStep(path, a, m, dt, paused)
     if gap > party.catchUp or (m.blocked or 0) > 8 then
         -- (far behind - you ran off, it was stuck on a rock: set down at its spot behind you)
         local g = groundAt(a, tx, ty, p.Z + 100)
+        crumb("party catch-up", path)
         pcall(function()
             a:K2_SetActorLocationAndRotation({ X = tx, Y = ty, Z = g and (g + (m.lift or 0)) or p.Z },
                 { pitch = 0, Yaw = r.Yaw, Roll = 0 }, false, {}, true)
@@ -391,6 +449,7 @@ local function followStep(path, a, m, dt, paused)
     if dist < 50 then
         gait(a, m, nil)
         if gap > 60 then
+            crumb("party face", path)
             pcall(function()
                 a:K2_SetActorRotation({ pitch = 0, Yaw = math.deg(math.atan(p.Y - q.Y, p.X - q.X)), Roll = 0 }, false)
             end)
@@ -402,6 +461,7 @@ local function followStep(path, a, m, dt, paused)
     local nx, ny = q.X + dx / dist * step, q.Y + dy / dist * step
     local nz = onGround(m, a, nx, ny, q.Z)
     local moved = true
+    crumb("party step", path)
     pcall(function()
         moved = a:K2_SetActorLocationAndRotation({ X = nx, Y = ny, Z = nz },
             { pitch = 0, Yaw = math.deg(math.atan(dy, dx)), Roll = 0 }, true, {}, false)
@@ -786,6 +846,7 @@ function Walkers.Init(c)
         ExecuteInGameThreadWithDelay(50, loop)
     end
     ExecuteInGameThreadWithDelay(1000, loop)
+    looping = true
     local function lookLoop()
         pcall(look)
         -- (the party: from the save, else the PARTY page - a change shows at once)
@@ -881,6 +942,15 @@ function Walkers.Init(c)
                 if camp and camp.inside == false then party.outside = true end
             end)
             pcall(partyFollow, "the world is up")
+        end)
+    end)
+    -- (other mods: n of the camp's cats walk with you - WaCa.Emit("TemporaryParty", 2, "a hunting patrol"); 0 = back home)
+    local temporary = {}
+    WaCa.On("TemporaryParty", function(n, why)
+        ExecuteInGameThread(function()
+            pcall(Walkers.Unescort, temporary, why or "the temporary party is over")
+            temporary = {}
+            if (tonumber(n) or 0) > 0 then temporary = Walkers.Escort(tonumber(n), why) end
         end)
     end)
     WaCa.Watch("OnExplorationCrouch", "/Script/SwtAdventure.SwtAdventureCharacter", "WaCaPartyCrouch", "post", "bValue")
