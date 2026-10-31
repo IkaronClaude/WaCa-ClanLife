@@ -36,7 +36,7 @@ local RUN = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Run_1.A_CatMa
 -- two (plain warriors) walk out to hunt - to a place the game puts prey (its prey generators, 30-90 m from camp) -
 -- stay there a while and walk home; come close while one hunts and it asks you, once, to give it space (a subtitle,
 -- WaCa Cutscenes' ShowLine). walkers.ini [Jobs]: On, Hunters, Radius, Line1...
-local jobs = { on = true, hunters = 1, radius = 800, stay = { 60, 120 }, lines = {} }
+local jobs = { on = true, hunters = 1, radius = 800, stay = { 60, 120 }, lines = {}, catchChance = 40, tryEvery = 25 }
 -- PATROLS on foot (tickets.md "Patrol encounters", operator 2026-10-28): the clan's patrols walk with this mover (the
 -- AI walks they had fail on this map) - and meeting one out there stops it a moment: its leader speaks (a subtitle),
 -- the rest wait. Lines: lines.ini [PatrolMeet] Line1... ({PLAYER}). groups[id] = { cats = { path }, met, onBack, left }
@@ -198,6 +198,55 @@ local function playWalk(a, on, animPath)
             mesh:SetAnimationMode(0, true)                 -- (its own animation blueprint again: idle)
         end
     end)
+end
+
+-- one of the game's cat montages on a quest cat (its mesh's own animation blueprint plays it); true when it started
+local ANIMS = "/Game/Art/Characters/CatMaster/Animations/"
+local function playMontage(a, rel)
+    local path = ANIMS .. rel
+    local m = WaCa.LoadAsset(path .. "." .. path:match("[^/]+$"))
+    if not m then return false end
+    return pcall(function()
+        local mesh = a.SkeletalMeshComponent
+        mesh:SetAnimationMode(0, true)
+        mesh:GetAnimInstance():Montage_Play(m, 1.0, 0, 0.0, true)
+    end)
+end
+
+-- A HUNTER AT WORK (tickets.md "NPCs do their jobs": "it walks to its hunting spot and tries to hunt"): out at its
+-- spot it sniffs for prey, drops into a stalk, leaps - and catches something by chance ([Jobs] CatchChance %), a bite
+-- if it does; again a while later, while it hunts there. The game's own montages (sniffing, sneak-attack start, the
+-- hunting leap, the bite). Events: NpcHuntTry(name, caught).
+local function huntLoop(path)
+    local m = movers[path]
+    if not m or not m.hunting or m.state ~= "wait" then return end
+    local a = StaticFindObject(path)
+    if not (a and a:IsValid()) then return end
+    local steps = {
+        { 0, function() playMontage(a, "Montages/AM_Interact_Sniffing") end },
+        { 3500, function() playMontage(a, "Montages/AM_SneakAttack_Start") end },
+        { 5500, function()
+            playMontage(a, "Combat/OffensiveStance/Montages/AM_WC_Hunting_Leap")
+            pcall(function()                                            -- (the leap carries it forward)
+                local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+                local f = math.rad(r.Yaw)
+                a:K2_SetActorLocation({ X = q.X + math.cos(f) * 150, Y = q.Y + math.sin(f) * 150, Z = q.Z }, true, {}, true)
+            end)
+        end },
+        { 7500, function()
+            local caught = math.random() * 100 < jobs.catchChance
+            if caught then playMontage(a, "Montages/AM_Interact_Bite_1") end
+            log("walkers: %s %s", m.name, caught and "catches prey at its spot" or "pounces and misses")
+            WaCa.Emit("NpcHuntTry", m.name, caught)
+        end },
+    }
+    for _, st in ipairs(steps) do
+        ExecuteInGameThreadWithDelay(st[1] + 1, function()
+            local now = movers[path]
+            if now == m and m.hunting and m.state == "wait" then pcall(st[2]) end
+        end)
+    end
+    ExecuteInGameThreadWithDelay(math.floor(jobs.tryEvery * 1000), function() huntLoop(path) end)
 end
 
 -- a cat sent home now (a turn's end): straight there
@@ -690,6 +739,7 @@ local function tick()
                         m.wait = jobs.stay[1] + math.random() * (jobs.stay[2] - jobs.stay[1])
                         m.hunting = true
                         log("walkers: %s hunts out at its spot (%.0f s)", m.name, m.wait)
+                        ExecuteInGameThreadWithDelay(1500, function() huntLoop(path) end)
                     elseif m.job then
                         m.hunting = false
                     end
@@ -998,6 +1048,8 @@ function Walkers.Init(c)
     local jj = ini["Jobs"] or {}
     jobs.on = (jj.On or "1") ~= "0"
     jobs.hunters = tonumber(jj.Hunters or "") or jobs.hunters
+    jobs.catchChance = tonumber(jj.CatchChance or "") or jobs.catchChance
+    jobs.tryEvery = math.max(10, tonumber(jj.TryEvery or "") or jobs.tryEvery)
     jobs.radius = tonumber(jj.Radius or "") or jobs.radius
     for _, k in ipairs(jj.__order or {}) do
         if k:match("^Line%d*$") and jj[k] ~= "" then jobs.lines[#jobs.lines + 1] = jj[k] end
