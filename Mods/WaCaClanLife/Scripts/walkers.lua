@@ -28,7 +28,7 @@ local Walkers = {}
 
 local WaCa, log, Events, Duties
 local cfg = { on = false, never = {}, roamers = 3, homebodies = 2, speed = 110, near = { 150, 350 }, stay = { 8, 20 },
-              far = { 500, 2500 } }
+              far = { 500, 2500 }, fadeAt = 60 }
 local WALK = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Walk_1.A_CatMaster_Walk_1"
 local TROT = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Trot_1.A_CatMaster_Trot_1"
 local RUN = "/Game/Art/Characters/CatMaster/Animations/A_CatMaster_Run_1.A_CatMaster_Run_1"
@@ -162,9 +162,9 @@ end
 local kismet
 -- the ground under a point - open water isn't ground (the water surfaces answer queries since WaCa Hunting's wading -
 -- a cat would walk on the river: the trace goes on below them), frozen water is (WaCa Clan Life's ice: cats cross it)
-local function groundAt(a, x, y, z)
+local function groundAt(a, x, y, z, up)
     kismet = kismet or StaticFindObject("/Script/Engine.Default__KismetSystemLibrary")
-    local top = z + 50
+    local top = z + (up or 50)
     for _ = 1, 3 do
         local hit = {}
         local ok, yes = pcall(function()
@@ -183,14 +183,14 @@ local function groundAt(a, x, y, z)
     end
     return nil
 end
-local function onGround(m, a, x, y, z)
+local function onGround(m, a, x, y, z, up)
     if m.lift == nil then
         local g = groundAt(a, m.home.X, m.home.Y, m.home.Z)
         m.lift = g and (m.home.Z - g) or false
         if not g then log("walkers: %s - no ground found under its home; it walks level", m.name) end
     end
     if not m.lift then return z end
-    local g = groundAt(a, x, y, z)
+    local g = groundAt(a, x, y, z, up)
     return g and (g + m.lift) or z
 end
 
@@ -673,6 +673,45 @@ end
 
 -- one tick: every mover a step on (game seconds), or waiting
 local lastTick
+-- FAR OUT OF VIEW: a walker more than [Walkers] FadeAt m from your cat that the camera hasn't drawn lately is hidden
+-- and stepped along its way without the ground trace / sweep (nobody sees it); it comes back - on the ground - within
+-- 0.8 x FadeAt or when it stops walking. Not a scene's cats, not your party.
+local function unfade(a, m, why)
+    m.faded = nil
+    local moved
+    pcall(function()
+        local q = a:K2_GetActorLocation()
+        -- (hidden it went in a straight line, maybe under a hill: knee height finds nothing from inside the ground -
+        -- then from 10 m up; not 10 m up first, that finds the branches overhead)
+        local z = onGround(m, a, q.X, q.Y, q.Z)
+        if z == q.Z then z = onGround(m, a, q.X, q.Y, q.Z, 1000) end
+        moved = z - q.Z
+        a:K2_SetActorLocation({ X = q.X, Y = q.Y, Z = z }, false, {}, true)
+        a:SetActorHiddenInGame(false)
+    end)
+    log("walkers: %s shown again (%s; %+.0f cm to the ground)", m.name, why or "near you", moved or 0)
+end
+local function fadeCheck(a, m)
+    if cfg.fadeAt <= 0 or m.staged or m.follow or m.state ~= "walk" then return false end
+    local far, unseen = false, false
+    pcall(function()
+        local p, q = playerPawn():K2_GetActorLocation(), a:K2_GetActorLocation()
+        local d2, at = (p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2, cfg.fadeAt * 100
+        far = d2 > (m.faded and (0.8 * at) ^ 2 or at ^ 2)
+        unseen = m.faded or not a:WasRecentlyRendered(0.5)
+    end)
+    if far and unseen then
+        if not m.faded then
+            m.faded = true
+            pcall(function() a:SetActorHiddenInGame(true) end)
+            log("walkers: %s is far out of view - hidden on its way", m.name)
+        end
+        return true
+    end
+    if m.faded then unfade(a, m) end
+    return false
+end
+
 local function tick()
     if not inWorld or not next(movers) then lastTick = nil return end
     local now = gameNow()
@@ -691,6 +730,7 @@ local function tick()
     pcall(function() paused = paused or (Events.Staging() and "a scene") or false end)
     for path, m in pairs(movers) do
         local a = StaticFindObject(path)
+        if a and a:IsValid() and m.faded and (m.state ~= "walk" or paused) then unfade(a, m, paused and "paused" or "it stopped") end
         if not (a and a:IsValid()) then
             movers[path] = nil
         elseif m.follow then
@@ -784,6 +824,7 @@ local function tick()
                     end
                 end
             elseif m.state == "walk" then
+                fadeCheck(a, m)
                 local target = m.legs[m.leg]
                 local q = a:K2_GetActorLocation()
                 local dx, dy = target.X - q.X, target.Y - q.Y
@@ -847,13 +888,13 @@ local function tick()
                     local yaw = math.deg(math.atan(dy, dx))
                     local moved = true
                     local nx, ny = q.X + dx * f, q.Y + dy * f
-                    local nz = onGround(m, a, nx, ny, q.Z + (target.Z - q.Z) * f)
+                    local nz = m.faded and (q.Z + (target.Z - q.Z) * f) or onGround(m, a, nx, ny, q.Z + (target.Z - q.Z) * f)
                     -- (a scene's cats don't sweep: walking into a tight ring of seats they bumped into the circle's
                     -- other cats and stalled - 7 of 9 short, VM 2026-10-29; roaming cats keep the sweep for rocks / walls)
                     crumb("SetLocRot step", path)
                     pcall(function()
                         moved = a:K2_SetActorLocationAndRotation({ X = nx, Y = ny, Z = nz },
-                            { pitch = 0, Yaw = yaw, Roll = 0 }, not m.staged, {}, false)
+                            { pitch = 0, Yaw = yaw, Roll = 0 }, not (m.staged or m.faded), {}, false)
                     end)
                     if moved == false then
                         -- (a rock, a den wall: this leg ends - home it is)
@@ -1115,6 +1156,7 @@ function Walkers.Init(c)
     cfg.roamers = tonumber(w.Roamers or "") or cfg.roamers
     cfg.homebodies = tonumber(w.Homebodies or "") or cfg.homebodies
     cfg.speed = tonumber(w.Speed or "") or cfg.speed
+    cfg.fadeAt = tonumber(w.FadeAt or "") or cfg.fadeAt
     if w.Trace == "1" then
         traceFile = io.open(os.getenv("LOCALAPPDATA") .. "/Wrc/Saved/walkers_trace.txt", "w")
         log("walkers: tracing engine calls to Saved/walkers_trace.txt (diagnostic)")

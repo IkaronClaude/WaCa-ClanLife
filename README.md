@@ -86,6 +86,9 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   For other mods: the `WalkerMoves` event (name, actor path, `home`/`away`) when a cat sets off, `WalkerWalkTo`
   (actor path, X, Y, Z: that cat walks there, stays a while, walks home), and `PlayScene`
   (step lines as in `clanevents.ini`, joined by `|`, e.g. `Groups: Prey|Wait: 3|Release`) to play a scene now.
+- **Far out of view** (`walkers.ini [Walkers] FadeAt`, 60 m): a walking cat that far from yours, which the camera hasn't
+  drawn lately, is hidden on its way and spared the ground checks; it's set back on the ground and shown within 0.8 x
+  FadeAt or when it stops. 0 = never.
 - **The clan's own patrols** (`patrols.ini`): camp cats head out to the border together, stop at each point and
   come home - meet them out there and they stop, and each cat says a word to you in turn (`lines.ini [PatrolMeet]` for the one
   leading, `[PatrolMeet.Member]` for the others, a cat's own `[PatrolMeet.<Name>]`, by leader `[PatrolMeet.LedBy.<Name>]`).
