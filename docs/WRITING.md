@@ -158,12 +158,13 @@ A story that begins later than the game's own start says so:
 Day = 13            ; the story day a new cat begins on
 Level = 8           ; its level, reached through the game's own EXP (its stats grow the game's way)
 Name = Warrior      ; the creator asks for the cat's whole warrior name (with WaCa Looks)
+Party = TheRegretfulWarrior     ; story cats (their roles) who fight beside this cat - kept for it every session
 Step1 = Card: Your first day as a warrior.
 ```
 
 It applies once, and only to a NEW cat (level 1, no rank quest done): a cat someone is already playing never
-changes when they install your pack. Not possible yet: a start rank and a start party (the game keeps both in its
-own quest data).
+changes when they install your pack. A patrol's own companions fight beside the cat while the patrol lasts, then the
+start's party again. Not possible yet: a start rank (the game counts its rank quests).
 
 ## 9. Several packs together
 

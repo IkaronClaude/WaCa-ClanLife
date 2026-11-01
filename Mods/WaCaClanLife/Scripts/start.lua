@@ -5,10 +5,11 @@
 --   Level = 8       the cat's level - reached through the game's own EXP, one level-up after another (its stats grow
 --                   the game's way)
 --   Name = Warrior  the creator asks for a warrior name (published as "story.start" for WaCa Looks' name box)
+--   Party = TheRegretfulWarrior, ...   story cats who fight beside this cat (WaCa.SetCombatParty's base), every session
 --   Step1 ...       scene steps run once at the start (Card, Set, Bond, Cutscene ...: the same as clan events)
 -- Applied ONCE per cat, and only to a new one (level 1, no rank quest done, no start applied before): installing a
--- pack never changes a cat already being played. Not possible yet: a start RANK (the game's rank is its rank quests,
--- kept in native quest data) and a start party (the same - tickets.md "The party = who you're out with").
+-- pack never changes a cat already being played. Not possible yet: a start RANK (the game's rank is its rank quests -
+-- tickets.md, an option for the operator).
 local Start = {}
 
 local WaCa, log, Days, Events
@@ -51,6 +52,16 @@ local function levelTo(target, tries)
     ExecuteInGameThreadWithDelay(1500, function() levelTo(target, tries - 1) end)
 end
 
+-- Party = TheRegretfulWarrior, RiverClanApprentice: the story cats who fight beside this cat (WaCa.SetCombatParty's base -
+-- a patrol's own party comes back to it)
+local function applyParty(list, why)
+    local roles = {}
+    for r in tostring(list or ""):gmatch("[^,%s]+") do roles[#roles + 1] = r end
+    if #roles == 0 or not WaCa.SetCombatParty then return end
+    local took = WaCa.SetCombatParty(roles, true)
+    log("start: the party - %s (%s)%s", table.concat(roles, ", "), why, took and "" or " - not taken (WaCa Core too old?)")
+end
+
 local function apply(why)
     local steps = {}
     for _, key in ipairs(cfg.__order or {}) do
@@ -66,9 +77,11 @@ local function apply(why)
     end
     if tonumber(cfg.Level or "") then levelTo(math.floor(tonumber(cfg.Level)), 100) end
     if #steps > 0 then Events.Run(steps) end
+    applyParty(cfg.Party, "the story pack's start")
     local path = sidecar()
     if path then
-        WaCa.WriteIni(path, { Start = { Applied = "1", Day = cfg.Day or "", Level = cfg.Level or "", __order = { "Applied", "Day", "Level" } },
+        WaCa.WriteIni(path, { Start = { Applied = "1", Day = cfg.Day or "", Level = cfg.Level or "", Party = cfg.Party or "",
+            __order = { "Applied", "Day", "Level", "Party" } },
             __order = { "Start" } }, "; WaCa Clan Life - this cat's story pack start was applied (start.ini) - never again")
     end
 end
@@ -77,9 +90,16 @@ end
 local function check()
     local slot = WaCa.CurrentSlot()
     if not slot or doneFor == slot then return end
+    -- (another cat: the last one's start party isn't this one's)
+    if doneFor and WaCa.SetCombatParty then WaCa.SetCombatParty({}, true) end
     local path = sidecar()
     local s = path and (WaCa.ReadIni(path) or {})["Start"]
-    if s and s.Applied == "1" then doneFor = slot return end
+    if s and s.Applied == "1" then
+        doneFor = slot
+        -- (the start's party is this cat's for good: set again each session)
+        applyParty(s.Party, "this cat's story pack start")
+        return
+    end
     local level = levelInfo()
     local rank = WaCa.PlayerRank()
     if not level then
