@@ -20,6 +20,7 @@ Mods/
       cutscenes.ini      cutscenes (needs WaCa Cutscenes)
       gatherings.ini     what happens at / around a Gathering
       lines.ini          dialogue: murmurs, lines by day
+      start.ini          where a new cat's story begins (day, level, a warrior name)
 ```
 
 Use only the files you need. A pack never edits anyone else's files; everything adds on (section 9).
@@ -147,6 +148,22 @@ Line2 = {LEADER} was kind to let him rest - kinder than I'd have been.
   nothing repeats until all of them have been said.
 - **Dialogue by days**: `[Dialogue.<Name>] Who / Days / Require / Line1..` gives the game's filler lines for given cats
   on given days.
+
+## 8b. Where a new cat starts (`start.ini`)
+
+A story that begins later than the game's own start says so:
+
+```ini
+[Start]
+Day = 13            ; the story day a new cat begins on
+Level = 8           ; its level, reached through the game's own EXP (its stats grow the game's way)
+Name = Warrior      ; the creator asks for the cat's whole warrior name (with WaCa Looks)
+Step1 = Card: Your first day as a warrior.
+```
+
+It applies once, and only to a NEW cat (level 1, no rank quest done): a cat someone is already playing never
+changes when they install your pack. Not possible yet: a start rank and a start party (the game keeps both in its
+own quest data).
 
 ## 9. Several packs together
 

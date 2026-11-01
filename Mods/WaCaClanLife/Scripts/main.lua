@@ -88,5 +88,7 @@ require("huntlines").Init(ctx({}))
 require("murmurs").Init(ctx({}))
 -- the story check: every story file read as the scene runner will, problems listed at the start (clanlife.ini)
 require("storycheck").Init(ctx({ Events = Events }))
+-- a story pack's start for a new cat: story day, level, steps (start.ini)
+require("start").Init(ctx({ Days = Days, Events = Events }))
 
 WaCa.Ready()

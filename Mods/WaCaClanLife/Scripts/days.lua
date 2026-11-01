@@ -117,6 +117,15 @@ local function advances()
 end
 
 function Days.Story() return story end
+-- the story moved to day n (a story pack's start, start.lua): its beats from now on, kept with the save
+function Days.SetStory(n, why)
+    if not cfg.on or not tonumber(n) then return false end
+    story = math.max(1, math.floor(tonumber(n)))
+    seen = {}
+    log("days: story day %d (%s)", story, why or "set")
+    setUp(why or "set")
+    return true
+end
 -- a key of the current story day (Like chains followed) - other features' story overrides (gatherings.ini ...)
 function Days.Get(key) return cfg.on and get(story, key) or nil end
 

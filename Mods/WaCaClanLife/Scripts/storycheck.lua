@@ -70,7 +70,7 @@ function StoryCheck.Run()
     for _, n in ipairs(type(cutscenes) == "table" and cutscenes or {}) do known[n] = true end
     local cast = Events.CastSpecs and Events.CastSpecs() or {}
     local set, tested = luaSetVars(), {}
-    local files = { "clanevents", "days", "gatherings", "duties", "events", "lines" }
+    local files = { "clanevents", "days", "gatherings", "duties", "events", "lines", "start" }
     local loaded = {}
     for _, file in ipairs(files) do
         loaded[file] = WaCa.ReadContent(modDir .. "/config/" .. file .. ".ini", file) or {}
