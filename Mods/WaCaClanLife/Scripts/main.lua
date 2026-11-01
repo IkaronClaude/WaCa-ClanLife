@@ -75,6 +75,8 @@ require("patrols").Init(ctx({ Duties = Duties, Follow = Follow, Lines = require(
 require("walkers").Init(ctx({ Events = Events, Duties = Duties }))
 -- Gatherings: the leader's pick, the announcement, attending or staying behind (config/gatherings.ini)
 require("gathering").Init(ctx({ Events = Events, Days = Days, DayNight = DayNight }))
+-- kits of your own: born to your cat and a mate, by the clan's nursery, kept with the save (config/kits.ini)
+require("kits").Init(ctx({ DayNight = DayNight }))
 -- the day at a glance on the HUD (clanlife.ini [Hud])
 require("hud").Init(ctx({}))
 require("dayclock").Init(ctx({}))

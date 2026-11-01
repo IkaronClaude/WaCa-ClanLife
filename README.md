@@ -58,6 +58,10 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   stretches are THIN ice (`ThinChance`): walk on one a few steps and it gives way - your cat drops into the water ("The
   ice cracks beneath your paws!"); the hole freezes over again later. Other mods / a story: `WaCa.Emit("Freeze", true /
   false)`; events `IceFrozen`, `IceThawed`, `FellThroughIce` (a rescue or injury scene goes there).
+- **Kits of your own** (`kits.ini`, groundwork - who becomes a mate and when is a story's to decide): a story or
+  mod has kits born with `WaCa.Emit("HaveKits", "<mate>"[, count])` - each kit's look blended from its parents',
+  kit-sized, named from the game's own unused name prefixes; they live by your clan's nursery (the game's den) and
+  are kept with the save. Event `KitsBorn(mate, names)`.
 - **Gatherings** (`gatherings.ini`): every few days the leader names the cats who go - your cat by chance, more likely
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
   builds on (rogues attack the camp while half the clan is away...). The Gathering party is seen on its way
