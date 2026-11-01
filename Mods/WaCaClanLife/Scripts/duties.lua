@@ -351,10 +351,30 @@ end
 local function companionsJoin(n)
     if n <= 0 then return nil end
     -- (the walkers' temporary party - it walks on any ground; the AI follow below is the fallback)
-    local ok, paths = pcall(function() return require("walkers").Escort(n, "your patrol") end)
+    -- (the story cats that can fight - the roles the save keeps combat stats for - may come too, and come first)
+    local fighters = {}
+    pcall(function()
+        for role in pairs(WaCa.GameProgress().Party.Stats) do fighters[role] = true end
+    end)
+    local ok, paths = pcall(function() return require("walkers").Escort(n, "your patrol", fighters) end)
     if ok and paths and #paths > 0 then
         log("duties: %d clanmate(s) join your patrol", #paths)
-        return { escort = paths }
+        -- the fight's party = who you're out with (tickets.md): the story cats among them fight beside you while the
+        -- patrol lasts (a generic clanmate has no story role - the game's own party then fills in)
+        local roles = {}
+        for _, path in ipairs(paths) do
+            pcall(function()
+                local a = StaticFindObject(path)
+                local r = a and a:IsValid() and a.narrativeRole
+                if r and r > 0 then roles[#roles + 1] = r end
+            end)
+        end
+        if #roles > 0 and WaCa.SetCombatParty then
+            local took = WaCa.SetCombatParty(roles)
+            log("duties: your patrol's story cats fight beside you (%d: roles %s)%s", #roles, table.concat(roles, ", "),
+                took and "" or " - not taken (WaCa Core too old?)")
+        end
+        return { escort = paths, party = #roles > 0 }
     end
     local Follow = require("follow")
     local cats = Follow.Nearest(n, cfg.companionRadius)
@@ -364,6 +384,10 @@ local function companionsJoin(n)
 end
 
 local function companionsLeave(group)
+    if group and group.party and WaCa.SetCombatParty then
+        WaCa.SetCombatParty(nil)
+        log("duties: the patrol is over - the game's own party fights beside you again")
+    end
     if group and group.escort then pcall(function() require("walkers").Unescort(group.escort, "the patrol is over") end)
     elseif group then require("follow").Release(group) end
 end
@@ -1296,10 +1320,12 @@ local function setUp(kind)
 end
 
 -- the deputy assigns the third's task
+local forcedKind = nil      -- (a test's task: WaCa.Emit("WaCaDutiesForce", "Patrol"))
 local function assign()
     local name = thirdName()
-    local kind = pickKind(name)
-    if today.lead and today.third <= 2 then kind = "Free" end
+    local kind = forcedKind or pickKind(name)
+    if today.lead and today.third <= 2 and not forcedKind then kind = "Free" end
+    forcedKind = nil
     if not KINDS[kind] then
         log("duties: unknown task %s for the %s - free time", tostring(kind), name)
         kind = "Free"
@@ -1872,6 +1898,15 @@ function Duties.Init(c)
         pendingThird = nil
         log("duties: time runs again - the %s begins", thirdName(p[1]):lower())
         ExecuteInGameThread(function() pcall(startThird, p[1], p[2]) end)
+    end)
+    -- (a test: this task now, whatever the plan says - the VM checks a patrol without waiting for one)
+    WaCa.On("WaCaDutiesForce", function(kind)
+        if not today or not KINDS[tostring(kind)] then log("duties: can't force '%s'", tostring(kind)) return end
+        if today.task then pcall(function() companionsLeave(today.task.companions) end) end
+        forcedKind = tostring(kind)
+        log("duties: a test forces the task %s now", forcedKind)
+        local ok, err = pcall(assign)
+        if not ok then log("duties: forced task failed (%s)", tostring(err)) end
     end)
     WaCa.On("WaCaDutiesSelfTest", function()
         local ok, err = pcall(dutiesSelfTest)

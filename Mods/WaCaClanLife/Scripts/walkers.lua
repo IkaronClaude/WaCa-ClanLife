@@ -428,9 +428,11 @@ end
 -- A TEMPORARY PARTY (tickets.md 7, patrols): n of the camp's plain cats (warriors, apprentices, elders - roamers) nearest
 -- your cat walk with you like the party - behind it, a row back - till Walkers.Unescort or your cat comes back into
 -- camp. (The patrol's companions were AI walks before - field cats' AI moves fail on this map: VM 2026-10-30.)
--- Returns their object paths.
+-- Returns their object paths. fighters = { [role name] = true }: story cats with those roles may come too (the save's
+-- combat party roles - the cats that can fight beside you: tickets.md "The party = who you're out with"); they are
+-- taken first and go back to their spots after, like the others.
 local looping = false             -- the movers' loop runs (walkers or the party on)
-function Walkers.Escort(n, why)
+function Walkers.Escort(n, why, fighters)
     if not looping then return {} end
     local p
     pcall(function() p = playerPawn():K2_GetActorLocation() end)
@@ -442,10 +444,14 @@ function Walkers.Escort(n, why)
             if not (a:IsValid() and shown(a)) then return end            -- (drawn only: never a parked filler)
             local path = pathOf(a)
             if movers[path] and movers[path].follow then return end
-            if kindOf(a, myClan) ~= "roamer" then return end
+            local kind = kindOf(a, myClan)
+            local role = enumName("/Script/SwtQuest.ENarrativeRole", a.narrativeRole, roleCache) or ""
+            local fighter = kind and fighters and fighters[role] or false
+            if kind ~= "roamer" and not fighter then return end
             local q = a:K2_GetActorLocation()
             local d = (q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2
-            if d <= 4000 ^ 2 then near[#near + 1] = { a = a, d = d } end
+            -- (a fighter first: the fight's party is who walks with you)
+            if d <= 4000 ^ 2 then near[#near + 1] = { a = a, d = fighter and d - 1e12 or d } end
         end)
     end
     table.sort(near, function(x, y) return x.d < y.d end)
@@ -651,6 +657,7 @@ end
 -- its end). The game takes your cat to the fight's arena and brings its own party there; ours waits (VM 2026-10-30: the
 -- party "caught up" 612 m into the arena - the story cats stood in the fight twice)
 local combatManager
+local directorAt, directorOn = nil, false      -- (the director check, at most once a second - FindAllOf scans every object)
 local function inFight()
     local on = false
     pcall(function()
@@ -658,6 +665,20 @@ local function inFight()
         local e = combatManager and combatManager.EnemyCharacter
         on = e ~= nil and e:IsValid()
     end)
+    -- (a spar / training fight sets no enemy there - the walkers stood in its arena: VM 2026-11-01; a fight's director
+    -- exists only while a fight is on - outside one, only its class default)
+    if not on then
+        local now = WaCa.Now and WaCa.Now() or os.clock()
+        if not directorAt or now - directorAt > 1 then
+            directorAt, directorOn = now, false
+            pcall(function()
+                for _, d in ipairs(FindAllOf("SwtAdventureCombatDirector") or {}) do
+                    if d:IsValid() and not d:GetFullName():find("Default__", 1, true) then directorOn = true break end
+                end
+            end)
+        end
+        on = directorOn
+    end
     return on
 end
 
