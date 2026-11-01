@@ -109,6 +109,9 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   cat to spend time together and grow your bond.
 
 ## Writing stories (no programming)
+
+**Start with [docs/WRITING.md](docs/WRITING.md)** - the writer's guide: a pack's files, every scene step, naming cats,
+conditions, cutscenes, story days, dialogue, several packs together, the story check, and a worked example.
 Every config here is this mod's file **plus** `<YourMod>\content\<name>.ini` of every enabled mod - so a story mod is a
 folder with `enabled.txt` and a `content` folder, and never edits anyone else's files:
 - a section only you have is added (two mods' clan events both exist);
