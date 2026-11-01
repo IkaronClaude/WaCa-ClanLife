@@ -86,5 +86,7 @@ require("mapmarks").Init(ctx({}))
 -- clanmates comment on your hunts (lines.ini [Hunt])
 require("huntlines").Init(ctx({}))
 require("murmurs").Init(ctx({}))
+-- the story check: every story file read as the scene runner will, problems listed at the start (clanlife.ini)
+require("storycheck").Init(ctx({ Events = Events }))
 
 WaCa.Ready()

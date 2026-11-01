@@ -116,6 +116,11 @@ folder with `enabled.txt` and a `content` folder, and never edits anyone else's 
   mods can add beats to the same story day or lines to the same dialogue;
 - a plain key is set by the later mod (logged); `Off = 1` in your copy of a section turns another mod's off.
 
+**The story check**: once the world is up, every story file (with every mod's content) is read the way the scenes
+will be, and what would go wrong in play is listed at once - an unknown step kind (`Crad:`), a cutscene nobody defines,
+a role (`S:<role>`) with no cat, an unreadable condition, a variable nothing sets - in the log (`story check:`) and
+`Saved/WaCaStoryCheck.txt`, with a line on screen when there are problems (`clanlife.ini [StoryCheck]`).
+
 **Scenes** are lines of steps, run one after another, each waiting for its end:
 `Card: <text>`, `Gather: <n> @ Here|Pile` (the camp's nearest walking clanmates, in an arc facing you), `Groups:
 Tongues|Prey` (the clan in small groups by their ties - `config/relations.ini` mates / pairs / friends / tensions; the

@@ -32,7 +32,10 @@ local function scenesOf(n, phase)
     local keys = { phase }
     if phase == "Noon" then table.insert(keys, "Afternoon") end
     for _, base in ipairs(keys) do
-        for _, suffix in ipairs({ "", "1", "2", "3", "4", "5", "6", "7", "8", "9" }) do
+        -- (all numbers, not 1-9: a day with more beats - or a pack's beats added to it - lost its end silently)
+        local suffixes = { "" }
+        for i = 1, 99 do suffixes[#suffixes + 1] = tostring(i) end
+        for _, suffix in ipairs(suffixes) do
             local v = get(n, base .. suffix)
             local step = v and Events and Events.Parse(v)
             if step then

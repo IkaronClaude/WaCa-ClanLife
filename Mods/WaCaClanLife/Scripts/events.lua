@@ -205,6 +205,9 @@ function Events.Cast(only)
     return any
 end
 
+-- who plays each of the mods' own roles, as written ([Cast] S:<role> = ...) - the story check reads it
+function Events.CastSpecs() return castSpecs end
+
 function Events.Role(key)
     local kind, name = tostring(key):match("^([ES]):(.+)$")
     return kind or "E", name or key
@@ -1256,13 +1259,22 @@ function Events.Parse(line)
     return { kind = kind, value = value or rest, who = who }
 end
 
--- numbered lines of a config section: <Prefix>, <Prefix>1 ... <Prefix>9 -> steps
+-- numbered lines of a config section: <Prefix>, <Prefix>1, <Prefix>2 ... -> steps, in number order. ALL of them - it
+-- used to stop at 9, so a longer scene (or a section that two packs' steps grow past 9) lost its end silently (the
+-- story check, 2026-11-01).
 function Events.Lines(section, prefix)
     local out = {}
     if not section then return out end
-    for _, key in ipairs({ prefix, prefix .. "1", prefix .. "2", prefix .. "3", prefix .. "4", prefix .. "5",
-                           prefix .. "6", prefix .. "7", prefix .. "8", prefix .. "9" }) do
-        local v = section[key]
+    local keys = {}
+    for k in pairs(section) do
+        if type(k) == "string" then
+            local n = k == prefix and 0 or tonumber(k:match("^" .. prefix .. "(%d+)$") or "")
+            if n then keys[#keys + 1] = { k = k, n = n } end
+        end
+    end
+    table.sort(keys, function(a, b) return a.n < b.n end)
+    for _, e in ipairs(keys) do
+        local v = section[e.k]
         if v and v ~= "" then
             local s = Events.Parse(v)
             if s then table.insert(out, s) end
