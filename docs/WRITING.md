@@ -123,7 +123,7 @@ Every beat is `<seconds from the start> <Action>`. The full list of actions, cam
 README.
 
 Cast slots take the same names as section 4. They also take `Rogue`, `Rogue:<Name>` and `Clan:<Clan>`: cats brought in
-for the scene and gone after it.
+for the scene and gone after it. A named rogue (`Rogue:Quill`) looks the same in every scene it is in.
 
 ## 7. Story days (`days.ini`)
 
