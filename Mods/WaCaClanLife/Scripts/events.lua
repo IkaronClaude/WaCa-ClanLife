@@ -1491,6 +1491,12 @@ local function runStep(s, ctx, nextStep, stop)
         if tostring(s.value):lower() ~= "none" then
             for who in tostring(s.value or ""):gmatch("[^,]+") do
                 who = who:match("^%s*(.-)%s*$")
+                -- (a pack's own role: the cat its [Cast] gives it - a name or E:<role>; a brought-in cat (Rogue: / Clan:)
+                -- has no story role. Library exercise 2026-11-01: S:herbalist = Mossfeather wasn't found)
+                if who:match("^S:") then
+                    local spec = (Events.CastSpecs and Events.CastSpecs() or {})[who]
+                    if type(spec) == "string" and not spec:match("^Rogue") and not spec:match("^Clan:") then who = spec end
+                end
                 local role = who:match("^E:(.+)$")
                 if not role then
                     pcall(function()

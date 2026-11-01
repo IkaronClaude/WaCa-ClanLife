@@ -139,10 +139,58 @@ function StoryCheck.Run()
     return problems, warnings
 end
 
+-- WATCH WHILE WRITING ([StoryCheck] Watch = 1): the story files are read when Clan Life starts, so an edited pack did
+-- nothing until the game restarted (library exercise 2026-11-01). With Watch on, every few seconds the story files
+-- (Clan Life's own and every pack's content/) are compared with what was read; a change reloads Clan Life the way
+-- UE4SS reloads an edited mod - its main.lua is rewritten as it is (same bytes, a new time), UE4SS sees the change.
+local WATCHED = { "clanevents", "days", "gatherings", "duties", "events", "lines", "start", "roster", "cutscenes" }
+local function storyText()
+    local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")
+    local parts = {}
+    local function add(path)
+        local f = io.open(path, "rb")
+        if f then parts[#parts + 1] = path .. "\0" .. f:read("*a") f:close() end
+    end
+    for _, n in ipairs(WATCHED) do add(modDir .. "/config/" .. n .. ".ini") end
+    for _, mod in ipairs(modsDir and WaCa.EnabledMods(modsDir) or {}) do
+        for _, n in ipairs(WATCHED) do add(modsDir .. "/" .. mod .. "/content/" .. n .. ".ini") end
+    end
+    return table.concat(parts, "\1")
+end
+local function watch(every)
+    local seen = storyText()
+    local looks = 0
+    local function look()
+        local now = storyText()
+        looks = looks + 1
+        if looks == 1 then log("story check: watch - first look (%d bytes of story files)", #now) end
+        if now ~= seen then
+            seen = now
+            log("story check: a story file changed - Clan Life (and WaCa Cutscenes, its scenes) reload (Watch)")
+            -- (WaCa Cutscenes reads the cutscenes.ini files - it reloads too)
+            local modsDir = modDir:match("^(.*)[/\\][^/\\]+$") or modDir
+            for _, path in ipairs({ modsDir .. "/WaCaCutscenes/Scripts/main.lua", modDir .. "/Scripts/main.lua" }) do
+                local f = io.open(path, "rb")
+                local src = f and f:read("*a")
+                if f then f:close() end
+                if src then
+                    local w = io.open(path, "wb")
+                    if w then w:write(src) w:close() end
+                end
+            end
+            return
+        end
+        ExecuteInGameThreadWithDelay(math.floor(every * 1000), look)
+    end
+    ExecuteInGameThreadWithDelay(math.floor(every * 1000), look)
+    log("story check: watching the story files (every %d s - an edit reloads Clan Life)", every)
+end
+
 function StoryCheck.Init(c)
     WaCa, log, Events, modDir = c.WaCa, c.log, c.Events, c.modDir
     local ini = WaCa.ReadIni(modDir .. "/config/clanlife.ini") or {}
     local sc = ini["StoryCheck"] or {}
+    if (sc.Watch or "0") == "1" then pcall(watch, math.max(2, tonumber(sc.WatchEvery or "") or 5)) end
     if (sc.On or "1") == "0" then return end
     local done = false
     WaCa.On("ScreenShown", function(screen)
