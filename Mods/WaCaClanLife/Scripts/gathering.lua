@@ -83,6 +83,14 @@ function Gathering.Init(c)
     WaCa.On("GatheringTravel", function(chosen)
         ExecuteInGameThread(function() pcall(Gathering.Travel, chosen == true or chosen == 1 or chosen == "1") end)
     end)
+    -- (a story's own Gathering: its evening scene now - [Attend] when chosen, else [StayBehind])
+    WaCa.On("GatheringEvening", function(chosen)
+        local yes = chosen == true or chosen == 1 or chosen == "1"
+        ExecuteInGameThread(function()
+            log("gathering: the evening's scene asked for - %s", yes and "Attend" or "StayBehind")
+            Events.Run(yes and cfg.scenes.Attend or cfg.scenes.StayBehind, function() end, {})
+        end)
+    end)
     if not cfg.on then return end
     Events.Provide("Gathering.Today", function() return today and 1 or 0 end)
     -- the announcement: when the AnnounceThird of a Gathering day begins (the clan loop's ClanThirdStart hook)
@@ -136,7 +144,7 @@ function Gathering.Travel(chosen)
     local id, names = Walkers.Patrol(cfg.party, { place }, "the Gathering", function()
         log("gathering: the Gathering party is back")
         WaCa.Emit("GatheringPartyBack")
-    end, { stay = cfg.stay })
+    end, { stay = cfg.stay, gathering = true })
     log("gathering: %s set(s) off for the Gathering without you (%.0f %.0f)", id and table.concat(names, ", ") or "nobody",
         place.X, place.Y)
 end

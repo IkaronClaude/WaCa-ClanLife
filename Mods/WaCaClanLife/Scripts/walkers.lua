@@ -480,9 +480,29 @@ function Walkers.Unescort(paths, why)
     if #back > 0 then log("walkers: %s go(es) back to their spots (%s)", table.concat(back, ", "), why or "done") end
 end
 
+-- a group's formation slot i round a point: 1 = the middle, then rings of 6, 12, 18 ... 1.5 m apart (12 cats: 3 m)
+local function ringSpot(i)
+    if i <= 1 then return 0, 0 end
+    local k, ring, size = i - 2, 1, 6
+    while k >= size do k, ring = k - size, ring + 1 size = 6 * ring end
+    local a = k / size * 2 * math.pi + ring * 0.5
+    return math.cos(a) * 150 * ring, math.sin(a) * 150 * ring
+end
+
 -- a patrol of n of the camp's plain cats: the points one after another (a short stop at each - marking), then each
 -- home; onBack() when the last is home. opts.stay = seconds they stay at the last point (a Gathering: the island).
 -- Returns its id and the cats' names, or nil.
+-- who goes to a Gathering besides the plain warriors (opts.gathering): the leader, the deputy, the medicine cat and
+-- the named warriors / apprentices - not the queens, kits and elders (as in the books). VM 2026-11-01: plain warriors
+-- alone were 3 of the RiverClan camp - a Gathering of 12 sent 3.
+local function goesToGatherings(a)
+    local role = enumName("/Script/SwtQuest.ENarrativeRole", a.narrativeRole, roleCache) or ""
+    local giver = enumName("/Script/SwtQuest.EGiverRole", a.GiverRole, giverCache) or ""
+    if giver == "Queen" or giver == "Kit" or giver == "Elder" then return false end
+    if role:find("Elder") or role:find("Queen") then return false end
+    return true
+end
+
 function Walkers.Patrol(n, points, why, onBack, opts)
     if not looping or (n or 0) <= 0 or #(points or {}) == 0 then return nil end
     local mid
@@ -492,7 +512,8 @@ function Walkers.Patrol(n, points, why, onBack, opts)
     for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
         pcall(function()
             if not (a:IsValid() and shown(a)) or movers[pathOf(a)] then return end
-            if kindOf(a, myClan) ~= "roamer" then return end
+            local kind = kindOf(a, myClan)
+            if kind ~= "roamer" and not (kind == "homebody" and opts and opts.gathering and goesToGatherings(a)) then return end
             local q = a:K2_GetActorLocation()
             if not mid or (q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2 <= 7000 ^ 2 then cats[#cats + 1] = a end
         end)
@@ -507,9 +528,11 @@ function Walkers.Patrol(n, points, why, onBack, opts)
         local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
         local home = { X = q.X, Y = q.Y, Z = q.Z }
         local legs = {}
+        local ox, oy = ringSpot(i)
         for _, pt in ipairs(points) do
-            -- (side by side, not on one spot)
-            legs[#legs + 1] = { X = pt.X + (i - 1) * 120, Y = pt.Y + ((i % 2 == 0) and 120 or -120), Z = pt.Z }
+            -- (a ring formation round each point, not one spot - and not a line: 12 cats in a row ran 13 m into the
+            -- lake at the Island)
+            legs[#legs + 1] = { X = pt.X + ox, Y = pt.Y + oy, Z = pt.Z }
         end
         legs[#legs + 1] = home
         local path = pathOf(a)

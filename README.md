@@ -62,7 +62,9 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   with good standing and the leader's favour, never while banned. Going and staying behind are scenes the story
   builds on (rogues attack the camp while half the clan is away...). The Gathering party is seen on its way
   (`[Travel]`): picked, a few cats walk with you; left behind, they set off without you to the Island (the game's own
-  zone), stay a while and come home. A story mod can send them itself: `WaCa.Emit("GatheringTravel", chosen)`.
+  zone), stay a while and come home - besides the plain warriors the leader, deputy, medicine cat and named warriors
+  go (not the queens, kits and elders), in a ring round the place. A story mod can send them itself:
+  `WaCa.Emit("GatheringTravel", chosen)`, and play the evening's scene: `WaCa.Emit("GatheringEvening", chosen)`.
 - **Your party goes with you** (`walkers.ini [Party]`): the cats on the pause menu's PARTY page leave camp with you and
   run alongside your cat (walk / trot / run to keep up, the ground followed), hold back while you sneak, are set down
   beside you when they fall far behind or get stuck, and walk back to their spots when you come into camp. They are the
