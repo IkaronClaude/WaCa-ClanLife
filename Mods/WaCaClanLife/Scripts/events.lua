@@ -1483,6 +1483,40 @@ local function runStep(s, ctx, nextStep, stop)
             log("events: bond +%s with %s%s", s.value, s.who or "Nearest", now and "" or " (not a story cat - no bond)")
         end
         nextStep()
+    elseif k == "Party" then
+        -- who fights beside your cat from now on (tickets.md "The party = who you're out with"): Party: Toadfrost,
+        -- E:RiverClanDeputy - story cats (by name, E:<role>, Leader ...); Party: none = the game's own. Kept as the
+        -- story variable Party (saved with the cat, set again each session - Events.Init)
+        local roles = {}
+        if tostring(s.value):lower() ~= "none" then
+            for who in tostring(s.value or ""):gmatch("[^,]+") do
+                who = who:match("^%s*(.-)%s*$")
+                local role = who:match("^E:(.+)$")
+                if not role then
+                    pcall(function()
+                        local cat = Events.Who(who)
+                        local v = cat and cat.narrativeRole
+                        if type(v) == "number" and v > 0 then role = v end
+                    end)
+                end
+                -- (a story cat anywhere in the world by its name - Who finds the ones near you: VM 2026-11-01)
+                if not role then
+                    for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+                        local ok, v = pcall(function() return WaCa.CatName(a) == who and a.narrativeRole end)
+                        if ok and type(v) == "number" and v > 0 then role = v break end
+                    end
+                end
+                if role then roles[#roles + 1] = role
+                else log("events: Party - %s is no story cat (only story cats can fight beside you)", who) end
+            end
+        end
+        local names = {}
+        for _, r in ipairs(roles) do names[#names + 1] = tostring(r) end
+        Events.SetVar("Party", #names > 0 and table.concat(names, ",") or 0)
+        local took = WaCa.SetCombatParty and WaCa.SetCombatParty(roles, true)
+        log("events: the party - %s%s", #roles > 0 and table.concat(names, ", ") or "the game's own",
+            took == false and " (not taken - WaCa Core too old?)" or "")
+        nextStep()
     elseif k == "Emit" then
         WaCa.Emit(s.value, ctx)
         nextStep()
@@ -1798,6 +1832,13 @@ function Events.Init(c)
             vars = {}
             for k, v in pairs((WaCa.ReadIni(WaCa.SlotFile("WaCaStory") or "") or {})["Vars"] or {}) do
                 if k ~= "__order" then vars[k] = tonumber(v) or v end
+            end
+            -- (a Party step's party is this cat's: set again for the session)
+            if vars.Party and vars.Party ~= 0 and WaCa.SetCombatParty then
+                local roles = {}
+                for r in tostring(vars.Party):gmatch("[^,%s]+") do roles[#roles + 1] = tonumber(r) or r end
+                WaCa.SetCombatParty(roles, true)
+                log("events: the party - %s (this save's Party)", tostring(vars.Party))
             end
         end
         local path = WaCa.SlotFile("WaCaStory")

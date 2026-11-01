@@ -60,6 +60,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Lead: <place> @ <who>` | a cat walks your cat somewhere - it comes to you, waits if you fall behind; places: `Den:<the game's den name>` (`Den:Apprentice's den`), `Zone:<code>`, `Pile`, a cat's name |
 | `Dialogue: <id> @ <who>` | one of the game's own conversations (ids in `events-dialogues.txt`) |
 | `Bond: <points> @ <who>` | your bond with a cat grows (or shrinks) |
+| `Party: <story cats>` | who fights beside your cat from now on (`Party: Toadfrost, E:RiverClanDeputy`; `Party: none` = the game's own) - kept with the save |
 | `Set: <var> = <value>` | sets a story variable (section 5) - `Set: X = Day + 2` works too |
 | `Add: <var> <n>` | adds to one (`Add: LeaderFavour 2`) |
 | `If: <conditions>` | the rest of the scene only if they hold |
