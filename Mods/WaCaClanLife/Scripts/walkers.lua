@@ -1502,13 +1502,42 @@ function Walkers.Init(c)
     WaCa.On("SequenceEnded", function() talkEnds("its sequence ended") end)
     WaCa.On("SequenceFinished", function() talkEnds("its sequence finished") end)
     -- (a cutscene: every mover holds where it is - the cutscene moves its cast and puts them back where they were)
-    WaCa.On("CutsceneStarted", function(name)
+    -- the party cats that follow you and aren't in it step out of the shots (hidden for the scene, back after) - they
+    -- stood in its frame where they held (library exercise 2026-11-01)
+    local outOfScene = {}
+    WaCa.On("CutsceneStarted", function(name, cast)
         cutsceneSince = os.time()
         log("walkers: cutscene %s - every cat holds", tostring(name))
+        local inCast = {}
+        for _, p in ipairs(type(cast) == "table" and cast or {}) do inCast[p] = true end
+        ExecuteInGameThread(function()
+            for path, m in pairs(movers) do
+                if m.follow and not inCast[path] then
+                    pcall(function()
+                        local a = StaticFindObject(path)
+                        if a and a:IsValid() and not a.bHidden then
+                            a:SetActorHiddenInGame(true)
+                            outOfScene[#outOfScene + 1] = path
+                        end
+                    end)
+                end
+            end
+            if #outOfScene > 0 then log("walkers: %d party cat(s) out of the cutscene's shots", #outOfScene) end
+        end)
     end)
     WaCa.On("CutsceneEnded", function()
         if cutsceneSince then log("walkers: the cutscene is over - moving again") end
         cutsceneSince = nil
+        local back = outOfScene
+        outOfScene = {}
+        ExecuteInGameThread(function()
+            for _, path in ipairs(back) do
+                pcall(function()
+                    local a = StaticFindObject(path)
+                    if a and a:IsValid() then a:SetActorHiddenInGame(false) end
+                end)
+            end
+        end)
     end)
     -- (the party: out of camp with you, back to their spots in camp; held while you sneak)
     WaCa.On("CampLeft", function()
