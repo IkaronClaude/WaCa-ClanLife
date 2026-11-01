@@ -195,8 +195,7 @@ Read it after every change; "No problems found." means the files read cleanly.
 
 **Writing without restarting:** set `Watch = 1` under `[StoryCheck]` in Clan Life's `config/clanlife.ini`. Then every
 time you save a story file, Clan Life (and WaCa Cutscenes, for your scenes) reloads within a few seconds, the story
-check runs again, and you can play the change at once - `WaCa.Emit("ClanEvent", "<name>")` from a console, or wait
-for its moment. Switch it off again for normal play.
+check runs again, and the change plays at its next moment. Switch it off again for normal play.
 
 ## 11. A worked example: a loner visits
 
