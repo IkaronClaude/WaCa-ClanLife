@@ -124,6 +124,13 @@ README.
 
 Cast slots take the same names as section 4. They also take `Rogue`, `Rogue:<Name>` and `Clan:<Clan>`: cats brought in
 for the scene and gone after it. A named rogue (`Rogue:Quill`) looks the same in every scene it is in.
+Give it a look of your own in your `cutscenes.ini`:
+
+```ini
+[Rogue.Quill]
+From = Toadfrost      ; start from this cat's look
+FurValue = 1          ; then any of the game's own look fields
+```
 
 ## 7. Story days (`days.ini`)
 
