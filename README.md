@@ -83,7 +83,9 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   hunt where the game puts prey, stays a while and walks home - come too close while it hunts and it asks you to give
   it space. Out there it really hunts - sniffs, stalks, leaps at the real prey near its spot and now and then catches
   it (`CatchChance`; with WaCa Hunting the prey is gone, or bolts on a miss).
-  Other mods: the `NpcHunt` event (n cats), `NpcHuntTry(name, caught)`.
+  Other mods: the `NpcHunt` event (n cats), `NpcHuntTry(name, caught)`.
+  The medicine cat goes out each morning for herbs (the game's herb / moss spots), sniffs and digs there, comes home
+  (`[Jobs] Herbs`; `WaCa.Emit("NpcGatherHerbs")`).
 - **The camp's named cats move about** (`walkers.ini`): the game's nameless walking cats are taken out; instead, each
   third of the day a few of the camp's named cats move (the ones that moved longest ago first), on the game's own walk
   animation, following the ground. Plain warriors, apprentices and elders roam across camp (a den's front, the

@@ -591,6 +591,51 @@ function Walkers.SendHunting(n, why)
     return names
 end
 
+-- THE MEDICINE CAT GATHERS HERBS (NPC jobs, [Jobs] Herbs = 1): it walks out to one of the game's own herb / moss
+-- pickups 20-90 m from camp (the ones the Gather duty uses), sniffs and digs there, comes home. Event NpcHerbs(name)
+-- on arrival; other mods: WaCa.Emit("NpcGatherHerbs").
+local HERB_CLASSES = { "BP_InteractableReward_Container_Moss_C", "BP_Pickup_SmallHealingHerb_C", "BP_Pickup_MediumHealingHerb_C",
+                       "BP_Pickup_BigHealingHerb_C", "BP_Pickup_SmallCatnip_C", "BP_Pickup_MediumCatnip_C", "BP_Pickup_BigCatnip_C" }
+function Walkers.SendHerbs(why)
+    if not looping then return nil end
+    local mid
+    pcall(function() mid = Duties.Camp().middle end)
+    if not mid then return nil end
+    local spots = {}
+    for _, cls in ipairs(HERB_CLASSES) do
+        for _, h in ipairs(FindAllOf(cls) or {}) do
+            pcall(function()
+                local q = h:K2_GetActorLocation()
+                local d = math.sqrt((q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2)
+                if d >= 2000 and d <= 9000 then spots[#spots + 1] = { X = q.X, Y = q.Y, Z = q.Z } end
+            end)
+        end
+    end
+    local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
+    local cat
+    for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+        pcall(function()
+            if cat or not (a:IsValid() and shown(a)) or movers[pathOf(a)] or not kindOf(a, myClan) then return end
+            local giver = enumName("/Script/SwtQuest.EGiverRole", a.GiverRole, giverCache) or ""
+            local role = enumName("/Script/SwtQuest.ENarrativeRole", a.narrativeRole, roleCache) or ""
+            if giver == "MedicineCat" or role:find("MedicineCat$") then cat = a end
+        end)
+    end
+    if not cat or #spots == 0 then
+        log("walkers: no herb gathering (%s, %d herb places)", cat and "the medicine cat is here" or "no medicine cat free", #spots)
+        return nil
+    end
+    local spot = spots[math.random(#spots)]
+    local q, r = cat:K2_GetActorLocation(), cat:K2_GetActorRotation()
+    local home = { X = q.X, Y = q.Y, Z = q.Z }
+    movers[pathOf(cat)] = { home = home, homeRot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll },
+                            legs = { spot, home }, leg = 1, state = "wait", wait = 1, kind = "herbs", job = "herbs",
+                            name = nameOf(cat) or "?" }
+    log("walkers: %s goes out for herbs (%s, %.0f m)", movers[pathOf(cat)].name, why or "the clan's day",
+        math.sqrt((spot.X - q.X) ^ 2 + (spot.Y - q.Y) ^ 2) / 100)
+    return movers[pathOf(cat)].name
+end
+
 -- the party cats walking with you now (actors) - Clan Life's hunt comments come from them
 function Walkers.Party()
     local out = {}
@@ -879,7 +924,20 @@ local function tick()
                         m.wait = m.stayLast
                         if m.lead then log("walkers: %s and the others stay %.0f s", m.name, m.stayLast) end
                     end
-                    if m.job and m.leg == 2 then
+                    if m.job == "herbs" and m.leg == 2 then
+                        -- (the medicine cat at its herb spot: sniffs it out, digs it up, a while there)
+                        m.wait = jobs.stay[1] + math.random() * (jobs.stay[2] - jobs.stay[1])
+                        log("walkers: %s gathers herbs out at its spot (%.0f s)", m.name, m.wait)
+                        ExecuteInGameThreadWithDelay(1500, function()
+                            local c = StaticFindObject(path)
+                            if c and c:IsValid() then playMontage(c, "Montages/AM_Interact_Sniffing") end
+                        end)
+                        ExecuteInGameThreadWithDelay(6000, function()
+                            local c = StaticFindObject(path)
+                            if c and c:IsValid() then playMontage(c, "Montages/AM_Interact_Dig") end
+                        end)
+                        WaCa.Emit("NpcHerbs", m.name)
+                    elseif m.job == "hunt" and m.leg == 2 then
                         m.wait = jobs.stay[1] + math.random() * (jobs.stay[2] - jobs.stay[1])
                         m.hunting = true
                         log("walkers: %s hunts out at its spot (%.0f s)", m.name, m.wait)
@@ -1265,6 +1323,7 @@ function Walkers.Init(c)
     local jj = ini["Jobs"] or {}
     jobs.on = (jj.On or "1") ~= "0"
     jobs.hunters = tonumber(jj.Hunters or "") or jobs.hunters
+    jobs.herbs = (jj.Herbs or "1") ~= "0"
     jobs.catchChance = tonumber(jj.CatchChance or "") or jobs.catchChance
     jobs.tryEvery = math.max(10, tonumber(jj.TryEvery or "") or jobs.tryEvery)
     jobs.radius = tonumber(jj.Radius or "") or jobs.radius
@@ -1406,6 +1465,15 @@ function Walkers.Init(c)
             ExecuteInGameThreadWithDelay(20000, function() pcall(Walkers.SendHunting, jobs.hunters, "the clan's " .. third:lower()) end)
         end)
     end
+    if cfg.on and jobs.on and jobs.herbs then
+        WaCa.On("ClanThird", function(_, third)
+            if third ~= "Morning" then return end
+            ExecuteInGameThreadWithDelay(30000, function() pcall(Walkers.SendHerbs, "the clan's morning") end)
+        end)
+    end
+    WaCa.On("NpcGatherHerbs", function()
+        ExecuteInGameThread(function() pcall(Walkers.SendHerbs, "asked") end)
+    end)
     WaCa.On("NpcHunt", function(n)
         ExecuteInGameThread(function() pcall(Walkers.SendHunting, tonumber(n) or jobs.hunters, "asked") end)
     end)
