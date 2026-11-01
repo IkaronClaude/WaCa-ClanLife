@@ -8,7 +8,7 @@
 local Kits = {}
 
 local WaCa, log
-local cfg = { on = true, countMin = 1, countMax = 3, spread = 160 }
+local cfg = { on = true, countMin = 1, countMax = 3, spread = 160, apprenticeAfter = 0, apprenticeScale = 0.8 }
 local kits = {}                 -- { name, look, mate, born (day) }
 local spawned = {}              -- kit name -> actor path
 local restoredFor = nil
@@ -83,7 +83,7 @@ local function place()
             local oy = out.X * math.sin(turn) + out.Y * math.cos(turn)
             local x, y = door.X + ox * cfg.spread, door.Y + oy * cfg.spread
             local z = groundUnder(x, y, door.Z)
-            local _, _, scale = WaCa.BlendLooks(kit.look, kit.look)
+            local scale = kit.grown and cfg.apprenticeScale or select(3, WaCa.BlendLooks(kit.look, kit.look))
             local cat = WaCa.SpawnCat(kit.look, { X = x, Y = y, Z = z }, face + (i - 1) * 25 * side, scale)
             if cat then
                 spawned[kit.name] = pathOf(cat)
@@ -101,8 +101,8 @@ local function keep()
     local data = { __order = {} }
     for i, kit in ipairs(kits) do
         local key = "Kit" .. i
-        data[key] = { Name = kit.name, Mate = kit.mate or "", Born = tostring(kit.born or 0), Look = kit.look,
-                      __order = { "Name", "Mate", "Born", "Look" } }
+        data[key] = { Name = kit.name, Mate = kit.mate or "", Born = tostring(kit.born or 0), Grown = kit.grown and "1" or "0",
+                      Look = kit.look, __order = { "Name", "Mate", "Born", "Grown", "Look" } }
         data.__order[#data.__order + 1] = key
     end
     WaCa.WriteIni(path, data, "; WaCa Clan Life - this save's own kits (kits.lua)")
@@ -123,7 +123,8 @@ local function restore()
     while data["Kit" .. i] do
         local k = data["Kit" .. i]
         if (k.Look or "") ~= "" then
-            kits[#kits + 1] = { name = k.Name, look = k.Look, mate = k.Mate, born = tonumber(k.Born or "") or 0 }
+            kits[#kits + 1] = { name = k.Name, look = k.Look, mate = k.Mate, born = tonumber(k.Born or "") or 0,
+                                grown = k.Grown == "1" }
         end
         i = i + 1
     end
@@ -143,6 +144,32 @@ local function lookOfMate(mate)
 end
 
 function Kits.List() return kits end
+
+-- GROWING UP (ApprenticeAfter days, 0 = never - a draft, the story's to decide): a kit that old becomes an apprentice -
+-- its name "...paw" (the game's own name texts), its look's role Apprentice, drawn bigger; placed again
+local function growUp(today)
+    if (cfg.apprenticeAfter or 0) <= 0 then return end
+    local grew = {}
+    for _, kit in ipairs(kits) do
+        if not kit.grown and today - (kit.born or today) >= cfg.apprenticeAfter then
+            local prefix = kit.look:match('PrefixNameId="([^"]*)"') or ""
+            local paw = prefix ~= "" and WaCa.GetText(prefix .. "_PAW") or ""
+            kit.grown = true
+            kit.look = kit.look:gsub('SuffixNameId="[^"]*"', 'SuffixNameId="_PAW"'):gsub("Role=%w+", "Role=Apprentice")
+            local old = kit.name
+            if paw ~= "" then kit.name = paw end
+            grew[#grew + 1] = old .. " -> " .. kit.name
+            local a = spawned[old] and StaticFindObject(spawned[old])
+            if a and a:IsValid() then WaCa.Despawn(a) end
+            spawned[old] = nil
+        end
+    end
+    if #grew > 0 then
+        log("kits: grown into apprentices - %s", table.concat(grew, ", "))
+        WaCa.Emit("KitsGrown", table.concat(grew, ","))
+        place()
+    end
+end
 
 -- your cat's kits with mate (a clanmate's name): count of them (else Count's range) - returns their names
 function Kits.Born(mate, count)
@@ -184,6 +211,8 @@ function Kits.Init(c)
     if lo then cfg.countMin, cfg.countMax = tonumber(lo), math.max(tonumber(lo), tonumber(hi))
     elseif tonumber(k.Count or "") then cfg.countMin, cfg.countMax = tonumber(k.Count), tonumber(k.Count) end
     cfg.spread = tonumber(k.Spread or "") or cfg.spread
+    cfg.apprenticeAfter = tonumber(k.ApprenticeAfter or "") or cfg.apprenticeAfter
+    cfg.apprenticeScale = tonumber(k.ApprenticeScale or "") or cfg.apprenticeScale
     log("kits: %s (%d-%d a litter, by the nursery)", cfg.on and "on" or "off", cfg.countMin, cfg.countMax)
     if not cfg.on then return end
     WaCa.On("HaveKits", function(mate, count)
@@ -195,6 +224,13 @@ function Kits.Init(c)
     WaCa.On("GameSaved", function()
         restore()
         keep()
+    end)
+    WaCa.On("DayStarted", function(n)
+        ExecuteInGameThreadWithDelay(2000, function()
+            pcall(restore)
+            local ok, err = pcall(growUp, tonumber(n) or 0)
+            if not ok then log("kits: growing up failed (%s)", tostring(err)) end
+        end)
     end)
     WaCa.On("ScreenShown", function(screen)
         local ok, hud = pcall(function() return screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") ~= nil end)
