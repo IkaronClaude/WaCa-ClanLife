@@ -167,7 +167,10 @@ function Events.Cast(only)
     local cats = WaCa.Cats and WaCa.Cats() or {}
     local any = false
     for key, spec in pairs(castSpecs) do
-        if not only or key == only then
+        -- (a cat brought in by the scenes - Rogue[:<Name>], Clan:<Clan>[.<Part>] - isn't looked for in the world: WaCa
+        -- Cutscenes spawns it per scene, from the specs published as roles.specs)
+        if spec:match("^Rogue") or spec:match("^Clan:") then
+        elseif not only or key == only then
             local cat
             local ek, er = Events.Role(spec)
             if spec:match("^E:") or spec == "Leader" or spec == "Deputy" or spec == "MedicineCat" then
@@ -1583,6 +1586,13 @@ function Events.Init(c)
         local spec = ini["Cast"][key]
         if key:match("^S:.+$") and spec and spec ~= "" then castSpecs[key] = spec
         else log("events: [Cast] %s - only S:<role> = <who> (a mod's own roles)", key) end
+    end
+    -- (who plays each role, as written - WaCa Cutscenes brings in a Rogue / Clan: one per scene)
+    WaCa.Publish("roles.specs", castSpecs, true)
+    for key, spec in pairs(castSpecs) do
+        if spec:match("^Rogue") or spec:match("^Clan:") then
+            log("events: [Cast] %s = %s - brought in by the scenes that ask for it", key, spec)
+        end
     end
     if next(castSpecs) then
         WaCa.On("ScreenShown", function(screen)

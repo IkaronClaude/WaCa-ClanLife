@@ -29,6 +29,18 @@ local function names(cat, cats)
             if c.giver == "Deputy" and not n.DEPUTY then n.DEPUTY = c.name end
         end
     end
+    -- (the clan's own parts as Clan Life knows them - the game's giver role misses some leaders: Lionstar murmured
+    -- about as "our leader", VM 2026-11-01)
+    for _, part in ipairs({ "Leader", "Deputy" }) do
+        local key = part:upper()
+        if not n[key] then
+            pcall(function()
+                local a = Events.Who(part)
+                local name = a and a:IsValid() and WaCa.CatName(a)
+                if name and name ~= "" then n[key] = name end
+            end)
+        end
+    end
     n.LEADER, n.DEPUTY = n.LEADER or "our leader", n.DEPUTY or "the deputy"
     return n
 end
@@ -60,6 +72,7 @@ local function check()
     if not line then return end
     local n = names(cat, cats)
     line = line:gsub("{(%u+)}", function(k) return n[k] or ("{" .. k .. "}") end)
+    line = line:gsub("^%l", string.upper)                  -- ("our leader ..." opening a line)
     log("murmurs: %s (%s): %s", cat.name, table.concat(from, ", "), line)
     WaCa.Emit("ShowLine", cat.name .. ": " .. line)
 end
