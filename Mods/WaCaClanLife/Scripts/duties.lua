@@ -107,17 +107,23 @@ end
 local function trainingPartner()
     local p = pc() and pc().Pawn
     if not p then return nil end
+    -- (the nearest one - never a parked Filler copy: those aren't hidden but stand far off, and the duty waited by one
+    -- while the cat stood next to the real teacher, VM 2026-11-01)
+    local at = p:K2_GetActorLocation()
+    local teacher, td
     for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
-        local found
         pcall(function()
             local name = a:IsValid() and not a.bHidden and a.narrativeRole and roleName(a.narrativeRole)
-            if name and name:find("WarriorMoveLearn$") then
-                found = { path = (a:GetFullName():gsub("^%S+ ", "")), role = a.narrativeRole, who = "the clan's move teacher" }
+            if name and name:find("WarriorMoveLearn$") and not a:GetClass():GetFName():ToString():find("Filler") then
+                local q = a:K2_GetActorLocation()
+                local d = (q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2
+                if not td or d < td then teacher, td = a, d end
             end
         end)
-        if found then return found end
     end
-    local at = p:K2_GetActorLocation()
+    if teacher then
+        return { path = (teacher:GetFullName():gsub("^%S+ ", "")), role = teacher.narrativeRole, who = "the clan's move teacher" }
+    end
     local best, bd
     for _, c in ipairs(FindAllOf("BP_Exploration_Character_Base_C") or {}) do
         pcall(function()
