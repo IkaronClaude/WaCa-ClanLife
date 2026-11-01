@@ -12,7 +12,7 @@ local modDir
 
 -- the scene runner's step kinds (events.lua's Run)
 local KINDS = { Add = true, Bond = true, Card = true, Cutscene = true, Dialogue = true, Emit = true, Fade = true,
-                FadeIn = true, Freeze = true, Gather = true, Groups = true, Hook = true, If = true, Pair = true,
+                FadeIn = true, Freeze = true, Gather = true, Groups = true, Hook = true, If = true, Lead = true, Pair = true,
                 Part = true, Pose = true, Release = true, Set = true, Wait = true }
 -- (which keys of which files are scene steps / conditions)
 local PHASES = { "Morning", "Noon", "Afternoon", "Evening", "Night" }

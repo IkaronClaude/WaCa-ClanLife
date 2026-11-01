@@ -1350,6 +1350,52 @@ end
 
 local function after(seconds, fn) ExecuteInGameThreadWithDelay(math.max(1, math.floor(seconds * 1000)), fn) end
 
+-- where a Lead: step goes - Den:<the game's den name> (your clan's nearest: Den:Apprentice's den), Zone:<code>,
+-- Pile, or a cat's name; nil when there's no such place
+local function leadPlace(where)
+    where = tostring(where or ""):match("^%s*(.-)%s*$")
+    local pawn = pc() and pc().Pawn
+    if not pawn then return nil end
+    local at = pawn:K2_GetActorLocation()
+    local function nearest(list)
+        local best, bd
+        for _, q in ipairs(list) do
+            local d = (q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2
+            if not bd or d < bd then best, bd = q, d end
+        end
+        return best
+    end
+    local den = where:match("^Den:%s*(.+)$")
+    if den then
+        local list = {}
+        for _, door in ipairs(FindAllOf("WrcHousingDoorActor") or {}) do
+            pcall(function()
+                if not door:IsValid() or door.bIsExit then return end
+                if door.ActorTitle:ToString():lower() == den:lower() then list[#list + 1] = door:K2_GetActorLocation() end
+            end)
+        end
+        return nearest(list)
+    end
+    local zone = where:match("^Zone:%s*(.+)$")
+    if zone then
+        local ok, place = pcall(function() return require("duties").ZonePlace(zone) end)
+        return ok and place or nil
+    end
+    if where == "Pile" then
+        local q = placeOf("Pile")
+        if q and (q.X ~= at.X or q.Y ~= at.Y) then return q end
+        return nil
+    end
+    for _, c in ipairs(WaCa.Cats and WaCa.Cats() or {}) do
+        if c.name:lower() == where:lower() then
+            local q
+            pcall(function() q = c.actor:K2_GetActorLocation() end)
+            return q
+        end
+    end
+    return nil
+end
+
 local function fade(from, to, seconds)
     pcall(function()
         pc().PlayerCameraManager:StartCameraFade(from, to, seconds, { R = 0, G = 0, B = 0, A = 1 }, true, true)
@@ -1450,6 +1496,76 @@ local function runStep(s, ctx, nextStep, stop)
             end
         end
         nextHook()
+    elseif k == "Lead" then
+        -- (a cat leads your cat there - waits when you fall behind; the scene goes on when it's there: tickets.md P1
+        -- "walk quests". Lead: Den:Apprentice's den @ S:mentor)
+        local okW, Walkers = pcall(require, "walkers")
+        local cat = Events.Who(s.who or "Nearest")
+        local spot = leadPlace(s.value)
+        if not (okW and Walkers.Lead and cat and cat:IsValid() and spot) then
+            log("events: Lead: %s - %s; going on", tostring(s.value),
+                not spot and "no such place" or "no cat to lead (" .. tostring(s.who or "Nearest") .. ")")
+            return nextStep()
+        end
+        local name = (WaCa.CatName and WaCa.CatName(cat)) or "a clanmate"
+        local path = (cat:GetFullName():gsub("^%S+ ", ""))
+        -- (the spot a little short of the place - in front of a den's door, not inside it)
+        pcall(function()
+            local q = cat:K2_GetActorLocation()
+            local dx, dy = q.X - spot.X, q.Y - spot.Y
+            local len = math.max(1, math.sqrt(dx * dx + dy * dy))
+            spot = { X = spot.X + dx / len * 150, Y = spot.Y + dy / len * 150, Z = spot.Z }
+        end)
+        local arrived = false
+        local function arrive(why)
+            if arrived then return end
+            arrived = true
+            log("events: %s led your cat to %s%s", name, tostring(s.value), why or "")
+            after(cfg.leadStay or 30, function()
+                local c = StaticFindObject(path)
+                if c and c:IsValid() then Walkers.Unstage(c) end
+            end)
+            nextStep()
+        end
+        -- (your cat far off when it begins: the cat comes to you first - without waiting - then leads; VM 2026-11-01: it
+        -- started by waiting where it stood)
+        local function lead() Walkers.Lead(cat, spot, function() arrive() end, "Lead: " .. tostring(s.value)) end
+        local near = true
+        local meet
+        pcall(function()
+            local p, q = pc().Pawn:K2_GetActorLocation(), cat:K2_GetActorLocation()
+            local dx, dy = p.X - q.X, p.Y - q.Y
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d > 500 then
+                near = false
+                meet = { X = p.X - dx / d * 200, Y = p.Y - dy / d * 200, Z = p.Z }
+            end
+        end)
+        if near then lead()
+        else
+            log("events: %s comes to your cat first", name)
+            Walkers.Lead(cat, meet, function() if not arrived then lead() end end, "to your cat", true)
+        end
+        -- (never a scene stuck on a walk: a cat that makes no headway for 3 checks in a row (30 s each) - and isn't
+        -- waiting for you - is set down there. Progress, not a time limit: on the VM a 40 m lead outlasted a 300 s
+        -- limit while walking fine, 2026-11-01)
+        local last, stuck = nil, 0
+        local function watch()
+            if arrived then return end
+            local c = StaticFindObject(path)
+            if not (c and c:IsValid()) then return arrive(" (the cat is gone)") end
+            local q = c:K2_GetActorLocation()
+            local waiting = false
+            pcall(function() waiting = Walkers.Waiting and Walkers.Waiting(c) end)
+            if last and not waiting and (q.X - last.X) ^ 2 + (q.Y - last.Y) ^ 2 < 50 * 50 then stuck = stuck + 1 else stuck = 0 end
+            last = { X = q.X, Y = q.Y }
+            if stuck >= 3 then
+                Walkers.Seat(c)
+                return arrive(" (set down - it made no headway)")
+            end
+            after(30, watch)
+        end
+        after(30, watch)
     elseif k == "Cutscene" then
         -- (WaCa Cutscenes plays it; the scene goes on when it's over - or at once when that mod isn't there to start it)
         local name = tostring(s.value)

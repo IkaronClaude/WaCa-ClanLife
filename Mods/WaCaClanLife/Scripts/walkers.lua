@@ -778,6 +778,48 @@ local function fadeCheck(a, m)
     return false
 end
 
+-- A CAT LEADS YOUR CAT SOMEWHERE (tickets.md P1 "walk quests": "the mentor WALKS you to the apprentice den - the cat
+-- leads, waits when you fall behind, goes on when you catch up, no quest marker"): Walkers.Lead(cat, spot, onArrive)
+-- - it walks there with the walkers' mover (held at the spot like a scene's seat), stops while your cat is more than
+-- Wait cm behind, goes on once within Resume cm; onArrive when it's there. Walkers.Unstage(cat) sends it home.
+local LEAD_WAIT, LEAD_RESUME = 600, 350
+local function leadWaits(a, m)
+    local far
+    pcall(function()
+        local p, q = playerPawn():K2_GetActorLocation(), a:K2_GetActorLocation()
+        local d2 = (p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2
+        far = m.leadWaiting and d2 > LEAD_RESUME * LEAD_RESUME or d2 > LEAD_WAIT * LEAD_WAIT
+    end)
+    if far and not m.leadWaiting then
+        m.leadWaiting = true
+        playWalk(a, false)
+        pcall(function()
+            local p, q = playerPawn():K2_GetActorLocation(), a:K2_GetActorLocation()
+            a:K2_SetActorRotation({ pitch = 0, Yaw = math.deg(math.atan(p.Y - q.Y, p.X - q.X)), Roll = 0 }, false)
+        end)
+        log("walkers: %s waits for you", m.name)
+    elseif not far and m.leadWaiting then
+        m.leadWaiting = false
+        playWalk(a, true)
+        log("walkers: %s goes on", m.name)
+    end
+    return m.leadWaiting == true
+end
+function Walkers.Waiting(a)               -- (a leading cat waiting for your cat)
+    local m = movers[pathOf(a)]
+    return m ~= nil and m.leadWaiting == true
+end
+function Walkers.Lead(a, spot, onArrive, why, noWait)
+    local face
+    pcall(function() local q = a:K2_GetActorLocation() face = math.deg(math.atan(spot.Y - q.Y, spot.X - q.X)) end)
+    Walkers.Stage(a, spot, face)
+    local m = movers[pathOf(a)]
+    if not m then return false end
+    m.lead, m.onArrive = not noWait, onArrive
+    log("walkers: %s leads your cat (%s)", m.name, why or "a scene")
+    return true
+end
+
 local function tick()
     if not inWorld or not next(movers) then lastTick = nil return end
     local now = gameNow()
@@ -889,6 +931,8 @@ local function tick()
                         pcall(WaCa.Emit, "WalkerMoves", m.name, path, m.leg == #m.legs and "home" or "away")
                     end
                 end
+            elseif m.state == "walk" and m.lead and leadWaits(a, m) then
+                -- (leading your cat: it waits while you're far behind)
             elseif m.state == "walk" then
                 fadeCheck(a, m)
                 local target = m.legs[m.leg]
@@ -911,6 +955,11 @@ local function tick()
                     m.state, m.arrived = "hold", true
                     playWalk(a, false)
                     log("walkers: %s is in its seat", m.name)
+                    if m.onArrive then
+                        local f = m.onArrive
+                        m.onArrive = nil
+                        ExecuteInGameThread(function() pcall(f) end)
+                    end
                 elseif dist <= math.max(step, 5) then
                     local tz = onGround(m, a, target.X, target.Y, target.Z)
                     crumb("SetLoc arrive", path)
