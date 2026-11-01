@@ -348,7 +348,8 @@ end
 
 -- clanmates on the patrol (tickets.md 7): the nearest clan cats walk with you (follow.lua - they hold back while you
 -- sneak) until the patrol is done or the day ends
-local function companionsJoin(n)
+local function companionsJoin(n, what)
+    what = what or "patrol"
     if n <= 0 then return nil end
     -- (the walkers' temporary party - it walks on any ground; the AI follow below is the fallback)
     -- (the story cats that can fight - the roles the save keeps combat stats for - may come too, and come first)
@@ -356,9 +357,9 @@ local function companionsJoin(n)
     pcall(function()
         for role in pairs(WaCa.GameProgress().Party.Stats) do fighters[role] = true end
     end)
-    local ok, paths = pcall(function() return require("walkers").Escort(n, "your patrol", fighters) end)
+    local ok, paths = pcall(function() return require("walkers").Escort(n, "your " .. what, fighters) end)
     if ok and paths and #paths > 0 then
-        log("duties: %d clanmate(s) join your patrol", #paths)
+        log("duties: %d clanmate(s) join your %s", #paths, what)
         -- the fight's party = who you're out with (tickets.md): the story cats among them fight beside you while the
         -- patrol lasts (a generic clanmate has no story role - the game's own party then fills in)
         local roles = {}
@@ -371,7 +372,7 @@ local function companionsJoin(n)
         end
         if #roles > 0 and WaCa.SetCombatParty then
             local took = WaCa.SetCombatParty(roles)
-            log("duties: your patrol's story cats fight beside you (%d: roles %s)%s", #roles, table.concat(roles, ", "),
+            log("duties: your %s's story cats fight beside you (%d: roles %s)%s", what, #roles, table.concat(roles, ", "),
                 took and "" or " - not taken (WaCa Core too old?)")
         end
         return { escort = paths, party = #roles > 0 }
@@ -1215,6 +1216,8 @@ local function setUp(kind)
         t.need = math.max(1, (plan and plan.hunt) or (pileValue() < cfg.pileLow and cfg.huntMax or math.random(cfg.huntMin, cfg.huntMax)))
         t.got = 0
         if cfg.huntingGround then t.ground = huntingGround() end
+        -- (a hunting patrol: clanmates hunt with you, and its story cats fight beside you - [Duties] HuntCompanions)
+        if (cfg.huntCompanions or 0) > 0 then t.companions = companionsJoin(cfg.huntCompanions, "hunt") end
         if t.ground then mapMark("hunt", t.ground, MARK_HUNT, "Hunting ground: " .. (t.ground.kind or "prey")) end
     elseif kind == "Patrol" then
         t.points = patrolPoints((plan and plan.patrol) or cfg.patrolPoints)
@@ -1961,6 +1964,7 @@ function Duties.Init(c)
     cfg.pileLow = tonumber(h.PileLow or "") or cfg.pileLow
     cfg.pilePerPrey = tonumber(h.PilePerPrey or "") or cfg.pilePerPrey
     cfg.huntingGround = (h.HuntingGround or "1") ~= "0"
+    cfg.huntCompanions = math.max(0, math.floor(tonumber(h.Companions or "") or 0))
     local gs = ini["Gather"] or {}
     cfg.gatherCount = math.max(1, tonumber(gs.Count or "") or cfg.gatherCount)
     cfg.gatherReach = tonumber(gs.Reach or "") or cfg.gatherReach
