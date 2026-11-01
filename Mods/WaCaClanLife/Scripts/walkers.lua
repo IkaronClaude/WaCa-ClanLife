@@ -215,11 +215,9 @@ local function playMontage(a, rel)
     local path = ANIMS .. rel
     local m = WaCa.LoadAsset(path .. "." .. path:match("[^/]+$"))
     if not m then return false end
-    return pcall(function()
-        local mesh = a.SkeletalMeshComponent
-        mesh:SetAnimationMode(0, true)
-        mesh:GetAnimInstance():Montage_Play(m, 1.0, 0, 0.0, true)
-    end)
+    local mesh
+    pcall(function() mesh = a.SkeletalMeshComponent end)
+    return WaCa.PlayMontage(mesh, m, 1.0, true) ~= nil      -- (null-safe)
 end
 
 -- A HUNTER AT WORK (tickets.md "NPCs do their jobs": "it walks to its hunting spot and tries to hunt"): out at its
@@ -1263,11 +1261,9 @@ function Walkers.Pair(a, b, montagePath, why, maxWait)
         local m = WaCa.LoadAsset(montagePath)
         local len = 4
         for _, c in ipairs({ ca, cb }) do
-            pcall(function()
-                local mesh = c.SkeletalMeshComponent
-                mesh:SetAnimationMode(0, true)
-                len = math.max(len, mesh:GetAnimInstance():Montage_Play(m, 1.0, 0, 0.0, true) or 0)
-            end)
+            local mesh
+            pcall(function() mesh = c.SkeletalMeshComponent end)
+            len = math.max(len, WaCa.PlayMontage(mesh, m, 1.0, true) or 0)
         end
         log("walkers: %s and %s - %s", na, nb, why or "together")
         WaCa.Emit("CatsTogether", na, nb, why or "")

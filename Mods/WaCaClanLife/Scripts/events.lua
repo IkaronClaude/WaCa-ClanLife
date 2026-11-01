@@ -300,18 +300,17 @@ local meshClass
 local function playMontage(cat, m)
     if pcall(function() cat:PlayAnimMontage(m, 1.0, FName("None")) end) then return true end
     meshClass = meshClass or StaticFindObject("/Script/Engine.SkeletalMeshComponent")
-    return pcall(function()
-        local mesh = cat:GetComponentByClass(meshClass)
-        mesh:GetAnimInstance():Montage_Play(m, 1.0, 0, 0.0, true)
-    end)
+    local mesh
+    pcall(function() mesh = cat:GetComponentByClass(meshClass) end)
+    return WaCa.PlayMontage(mesh, m) ~= nil               -- (null-safe: no anim instance, no mesh)
 end
 
 local function stopMontage(cat)
     if pcall(function() cat:StopAnimMontage(nil) end) then return end
-    pcall(function()
-        meshClass = meshClass or StaticFindObject("/Script/Engine.SkeletalMeshComponent")
-        cat:GetComponentByClass(meshClass):GetAnimInstance():Montage_Stop(0.25, nil)
-    end)
+    meshClass = meshClass or StaticFindObject("/Script/Engine.SkeletalMeshComponent")
+    local mesh
+    pcall(function() mesh = cat:GetComponentByClass(meshClass) end)
+    WaCa.StopMontage(mesh)
 end
 
 function Events.Pose(pose, who, ctx)

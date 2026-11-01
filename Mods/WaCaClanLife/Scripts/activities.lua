@@ -138,7 +138,9 @@ local function once()
     local helper = StaticFindObject("/Script/AIModule.Default__AIBlueprintHelperLibrary")
     for i, cat in ipairs({ first, partner }) do
         pcall(function()
-            local brain = cat:GetController().BrainComponent
+            local ctrl = cat:GetController()
+            if not (ctrl and ctrl:IsValid()) then return end      -- (no controller: a method on null crashes)
+            local brain = ctrl.BrainComponent
             if brain and brain:IsValid() then
                 brain:StopLogic("WaCa activity")
                 table.insert(brains, (brain:GetFullName():gsub("^%S+ ", "")))
