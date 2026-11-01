@@ -42,6 +42,7 @@ function TimeSkip.Init(c)
     local t = ini["TimeSkip"] or {}
     cfg.on = c.part("TimeSkip", t.On)
     cfg.key = (t.RestKey or "") ~= "" and t.RestKey or nil
+    if cfg.on and cfg.key then cfg.key = WaCa.ModKey("ClanLife", "Rest", cfg.key, "rest (a day passes)") end
     cfg.days = math.max(1, math.floor(tonumber(t.RestDays or "") or 1))
     cfg.hour = tonumber(t.WakeHour or "")
     cfg.seconds = tonumber(t.CardSeconds or "") or cfg.seconds

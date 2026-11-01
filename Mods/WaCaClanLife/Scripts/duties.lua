@@ -1890,6 +1890,8 @@ function Duties.Init(c)
     cfg.campRadius = tonumber(d.CampRadius or "") or cfg.campRadius
     cfg.campMax = tonumber(d.CampMax or "") or cfg.campMax
     cfg.reportKey = (d.ReportKey or "") ~= "" and d.ReportKey or cfg.reportKey
+    -- (keybinds.ini [ModKeys] ClanLife.Report wins - one key file for every mod)
+    if cfg.on then cfg.reportKey = WaCa.ModKey("ClanLife", "Report", cfg.reportKey, "report a finished task") end
     cfg.reportRadius = tonumber(d.ReportRadius or "") or cfg.reportRadius
     local th = ini["Thirds"] or {}
     for _, name in ipairs({ "Morning", "Noon", "Evening", "Night" }) do

@@ -139,6 +139,7 @@ function Romance.Init(c)
     local r = ini["Romance"] or {}
     cfg.on = c.part("Romance", r.On)
     cfg.key = (r.AskKey or "") ~= "" and r.AskKey or cfg.key
+    if cfg.on then cfg.key = WaCa.ModKey("ClanLife", "AskMate", cfg.key, "ask a cat to be your mate") end
     cfg.radius = tonumber(r.Radius or "") or cfg.radius
     cfg.minBond = BOND_LEVELS[r.MinBond or ""] and r.MinBond or cfg.minBond
     cfg.minRank = (r.MinRank or "") ~= "" and r.MinRank or cfg.minRank

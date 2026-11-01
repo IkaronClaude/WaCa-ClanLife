@@ -298,6 +298,8 @@ function Activities.Init(c)
     local j = ini["Join"] or {}
     join.on = c.part("Join", j.On)
     join.key = (j.Key or "") ~= "" and j.Key or join.key
+    -- (keybinds.ini [ModKeys] ClanLife.JoinActivity wins - one key file for every mod)
+    if join.on then join.key = WaCa.ModKey("ClanLife", "JoinActivity", join.key, "join an activity") end
     join.radius = tonumber(j.Radius or "") or join.radius
     join.bond = math.floor(tonumber(j.Bond or "") or join.bond)
     join.perDay = math.max(1, math.floor(tonumber(j.PerDay or "") or join.perDay))
