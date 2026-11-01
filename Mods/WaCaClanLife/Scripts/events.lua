@@ -548,14 +548,15 @@ local function keepCampNames()
             local spot = c.QuestMoveComponentHandler.SpawnPointRef
             if not (spot and spot:IsValid()) then return end
             local key = spot:GetFName():ToString()
-            local cd = c.MeshCustomizationComponent.CustomData
+            local cd = WaCa.CustomData(c)
+            if not cd then return end
             local now = cd.PrefixNameId:ToString() .. "|" .. cd.SuffixNameId:ToString()
             local saved = names[key]
             if saved and saved ~= now then
                 local pre, suf = saved:match("^([^|]*)|(.*)$")
                 cd.PrefixNameId = pre
                 cd.SuffixNameId = suf
-                local again = c.MeshCustomizationComponent.CustomData
+                local again = WaCa.CustomData(c) or cd
                 if again.PrefixNameId:ToString() == pre and again.SuffixNameId:ToString() == suf then
                     kept = kept + 1
                 else
@@ -587,7 +588,8 @@ end
 local function identity(cat)
     local who = { cat = cat }
     pcall(function()
-        local cd = cat.MeshCustomizationComponent.CustomData
+        local cd = WaCa.CustomData(cat)
+        if not cd then return end
         who.role = ROLE_NAMES[cd.Role] or tostring(cd.Role)
         who.clan = clanName(cd.ClanType)
         local name = WaCa.GetText(cd.PrefixNameId:ToString() .. cd.SuffixNameId:ToString())

@@ -75,7 +75,8 @@ local function pathOf(o) return (o:GetFullName():gsub("^%S+ ", "")) end
 local function nameOf(cat)
     local name
     pcall(function()
-        local cd = cat.MeshCustomizationComponent.CustomData
+        local cd = WaCa.CustomData(cat)
+        if not cd then return end
         name = WaCa.GetText(cd.PrefixNameId:ToString() .. cd.SuffixNameId:ToString())
     end)
     return (name and name ~= "") and name or nil
@@ -784,9 +785,11 @@ end
 -- Wait cm behind, goes on once within Resume cm; onArrive when it's there. Walkers.Unstage(cat) sends it home.
 local LEAD_WAIT, LEAD_RESUME = 600, 350
 local function leadWaits(a, m)
+    local me = playerPawn()
+    if not (me and a and a:IsValid()) then return false end    -- (a method on null crashes - pcall can't catch it)
     local far
     pcall(function()
-        local p, q = playerPawn():K2_GetActorLocation(), a:K2_GetActorLocation()
+        local p, q = me:K2_GetActorLocation(), a:K2_GetActorLocation()
         local d2 = (p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2
         far = m.leadWaiting and d2 > LEAD_RESUME * LEAD_RESUME or d2 > LEAD_WAIT * LEAD_WAIT
     end)
@@ -794,7 +797,7 @@ local function leadWaits(a, m)
         m.leadWaiting = true
         playWalk(a, false)
         pcall(function()
-            local p, q = playerPawn():K2_GetActorLocation(), a:K2_GetActorLocation()
+            local p, q = me:K2_GetActorLocation(), a:K2_GetActorLocation()
             a:K2_SetActorRotation({ pitch = 0, Yaw = math.deg(math.atan(p.Y - q.Y, p.X - q.X)), Roll = 0 }, false)
         end)
         log("walkers: %s waits for you", m.name)
@@ -1269,6 +1272,8 @@ function Walkers.Unstage(a)
     local m = movers[path]
     if not m then return end
     m.staged, m.arrived = false, false
+    -- (a cat that led your cat walks home on its own - it kept "waiting for you" on the way home, VM 2026-11-01)
+    m.lead, m.leadWaiting, m.onArrive = false, false, nil
     m.legs, m.leg, m.state = { m.home }, 1, "walk"
     playWalk(a, true)
 end
