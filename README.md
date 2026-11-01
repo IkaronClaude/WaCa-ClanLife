@@ -100,7 +100,8 @@ bedding (apprentices: out of a den, thrown out of camp) or free time. Do it and 
   leading, `[PatrolMeet.Member]` for the others, a cat's own `[PatrolMeet.<Name>]`, by leader `[PatrolMeet.LedBy.<Name>]`).
 - **New things to say** (`lines.ini`): lines per cat role and time of day, and **dialogue by story day** - a queen says
   one of three lines each day of a week, a new one each day, no repeats until all were said.
-- **Clan activities** (`activities.ini`): clanmates sit, nap, sniff around or play-fight in camp; press G next to a story
+- **Clan activities** (`activities.ini`): clanmates sit, nap, sniff around or play-fight in camp (two of the camp's named cats walk together
+  for a pair activity - `Walkers.Pair`); press G next to a story
   cat to spend time together and grow your bond.
 
 ## Writing stories (no programming)

@@ -1075,6 +1075,7 @@ function Walkers.Turn(why, gen)
 end
 
 function Walkers.On() return cfg.on end
+function Walkers.Running() return looping end          -- (the mover runs - for the party too, roaming off)
 
 -- SPOKEN TO: a conversation holds every mover where it is; the cat spoken to (the mover nearest your cat, within 5 m)
 -- ends its trip there - after the talk it stays a while, then walks home
@@ -1165,6 +1166,77 @@ function Walkers.Unstage(a)
     m.staged, m.arrived = false, false
     m.legs, m.leg, m.state = { m.home }, 1, "walk"
     playWalk(a, true)
+end
+
+-- TWO CATS DO SOMETHING TOGETHER (activities.lua's pair activities - play-fighting ...): both walk to a spot either
+-- side of their midpoint (the walkers' mover: the AI's own moves fail on this map), face each other and play the
+-- montage (an object path); then they walk home. Not there in MaxWait s: set down in place and played all the same.
+function Walkers.Pair(a, b, montagePath, why, maxWait)
+    if not (a and a:IsValid() and b and b:IsValid()) then return false end
+    local p, q = a:K2_GetActorLocation(), b:K2_GetActorLocation()
+    local dx, dy = q.X - p.X, q.Y - p.Y
+    local dist = math.max(1, math.sqrt(dx * dx + dy * dy))
+    local ux, uy = dx / dist, dy / dist
+    local mid = { X = (p.X + q.X) / 2, Y = (p.Y + q.Y) / 2 }
+    local spotA = { X = mid.X - ux * 60, Y = mid.Y - uy * 60 }
+    local spotB = { X = mid.X + ux * 60, Y = mid.Y + uy * 60 }
+    spotA.Z = groundAt(a, spotA.X, spotA.Y, (p.Z + q.Z) / 2) or p.Z
+    spotB.Z = groundAt(b, spotB.X, spotB.Y, (p.Z + q.Z) / 2) or q.Z
+    local yawA = math.deg(math.atan(uy, ux))
+    -- (each actor keeps its own capsule height above the ground: the mover's lift)
+    pcall(function() spotA.Z = spotA.Z + (p.Z - (groundAt(a, p.X, p.Y, p.Z) or p.Z)) end)
+    pcall(function() spotB.Z = spotB.Z + (q.Z - (groundAt(b, q.X, q.Y, q.Z) or q.Z)) end)
+    Walkers.Stage(a, spotA, yawA)
+    Walkers.Stage(b, spotB, yawA + 180)
+    local pa, pb = pathOf(a), pathOf(b)
+    local na, nb = nameOf(a) or "?", nameOf(b) or "?"
+    log("walkers: %s and %s meet for %s (%.0f m apart)", na, nb, why or "an activity", dist / 100)
+    local waited, limit = 0, maxWait or 90
+    local function step()
+        local ca, cb = StaticFindObject(pa), StaticFindObject(pb)
+        if not (ca and ca:IsValid() and cb and cb:IsValid()) then return end
+        if not (Walkers.Staged(ca) and Walkers.Staged(cb)) then
+            waited = waited + 2
+            if waited < limit then ExecuteInGameThreadWithDelay(2000, step) return end
+            log("walkers: %s and %s not there in %d s - set down in place", na, nb, limit)
+            Walkers.Seat(ca)
+            Walkers.Seat(cb)
+        end
+        local m = WaCa.LoadAsset(montagePath)
+        local len = 4
+        for _, c in ipairs({ ca, cb }) do
+            pcall(function()
+                local mesh = c.SkeletalMeshComponent
+                mesh:SetAnimationMode(0, true)
+                len = math.max(len, mesh:GetAnimInstance():Montage_Play(m, 1.0, 0, 0.0, true) or 0)
+            end)
+        end
+        log("walkers: %s and %s - %s", na, nb, why or "together")
+        WaCa.Emit("CatsTogether", na, nb, why or "")
+        ExecuteInGameThreadWithDelay(math.floor((len + 2) * 1000), function()
+            for _, path in ipairs({ pa, pb }) do
+                local c = StaticFindObject(path)
+                if c and c:IsValid() then Walkers.Unstage(c) end
+            end
+        end)
+    end
+    ExecuteInGameThreadWithDelay(2000, step)
+    return true
+end
+
+-- the camp's named cats standing about (not moving, not hidden, of your clan) within radius of a point
+function Walkers.IdleCats(center, radius)
+    local out = {}
+    local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
+    for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+        pcall(function()
+            if not (a:IsValid() and shown(a)) or movers[pathOf(a)] then return end
+            if not kindOf(a, myClan) then return end
+            local q = a:K2_GetActorLocation()
+            if (q.X - center.X) ^ 2 + (q.Y - center.Y) ^ 2 <= radius * radius then out[#out + 1] = a end
+        end)
+    end
+    return out
 end
 
 function Walkers.Init(c)

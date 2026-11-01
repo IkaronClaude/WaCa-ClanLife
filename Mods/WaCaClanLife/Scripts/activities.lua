@@ -60,12 +60,39 @@ local function face(a, b)
     a:K2_SetActorRotation({ pitch = 0, Yaw = yaw, Roll = 0 }, false)
 end
 
+-- a pair among the camp's NAMED cats (walkers on: the camp's nameless walkers are gone, its life is its named cats -
+-- and the AI's own moves fail on this map): two idle ones near your cat, walked together by the walkers' mover
+local function namedPair(pawn, activity)
+    local okW, Walkers = pcall(require, "walkers")
+    if not (okW and Walkers.Running and Walkers.Running() and Walkers.Pair) then return false end
+    local p = pawn:K2_GetActorLocation()
+    local named = Walkers.IdleCats(p, cfg.radius)
+    if #named < 2 then return false end
+    local first = named[math.random(#named)]
+    local f = first:K2_GetActorLocation()
+    local partner, best
+    for _, c in ipairs(Walkers.IdleCats(f, cfg.pairRadius)) do
+        if c ~= first then
+            local q = c:K2_GetActorLocation()
+            local d = (f.X - q.X) ^ 2 + (f.Y - q.Y) ^ 2
+            if not best or d < best then partner, best = c, d end
+        end
+    end
+    if not partner then return false end
+    return Walkers.Pair(first, partner, activity.montage, activity.name)
+end
+
 local function once()
     local pawn = player()
     if not pawn then return end
+    local activity = pick()
+    if activity and activity.pair then
+        local ok, done = pcall(namedPair, pawn, activity)
+        if not ok then log("activities: the named pair failed (%s)", tostring(done)) end
+        if ok and done then return end
+    end
     local cats = idleCatsNear(pawn)
     if #cats == 0 then return end
-    local activity = pick()
     local montage = activity and LoadAsset(activity.montage)
     if not montage then
         log("activities: %s - its montage %s doesn't load", activity and activity.name or "?", activity and activity.montage or "?")
