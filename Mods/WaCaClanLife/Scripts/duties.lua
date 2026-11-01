@@ -1436,7 +1436,9 @@ local function reportKey()
         feedback(string.format("No %s close enough to report to.", how == "Partner" and (today.task and today.task.who or "partner") or how:lower()))
         return
     end
-    log("duties: your cat reports to %s (%.0f away, the report key)", pathOf(cat):match("([^.]+)$") or "?", dist)
+    -- (the cat's own name - the actor's class says little: the elder Sharpfoot is a BP_Quest_Giver_Deputy, VM 2026-11-01)
+    local who = (WaCa.CatName and WaCa.CatName(cat)) or pathOf(cat):match("([^.]+)$") or "?"
+    log("duties: your cat reports to %s (%.0f away, the report key)", who, dist)
     turnedIn(how)
 end
 
