@@ -34,6 +34,12 @@ local THIRDS = { "Morning", "Noon", "Evening" }
 local KINDS = { Hunt = true, Patrol = true, Train = true, Free = true, NightWatch = true, Sleep = true, Gather = true,
                 Bedding = true, Water = true }
 local COUNTED = { Hunt = true, Patrol = true, Train = true, NightWatch = true }
+-- A PACK'S OWN DUTIES (library exercise 2026-11-02: the duties were the code's - a story couldn't add "the herb round"):
+-- duties.ini [Duty.<Name>] - Title, Points = <place>; <place> ... (reached in order, each marked: Den:<the game's den
+-- name>, Pile, Zone:<code>, a cat / role (Leader, S:herbalist ...), X Y Z), PointName<n> / Card<n> (what it's called /
+-- the card when reached), Goal, Reach (cm), MinRank / MaxRank, Counted (1 = it counts as a done duty) and the usual
+-- [Task.<Name>] TurnIn; its chances in [Tasks] like any duty (Morning = Hunt:2, HerbRound:1).
+local custom = {}
 local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Deputy", huntMin = 1, huntMax = 3, pileLow = 50, patrolPoints = 2, pilePerPrey = 4,
               companions = 2, companionRadius = 3000,
               train = true, trainMaxRank = "Apprentice", trainBond = 2,
@@ -954,6 +960,11 @@ end
 local function describe(t)
     if not t then return "" end
     if t.kind == "Hunt" then return string.format("hunt %d prey (%d)", t.need, t.got) end
+    if t.custom and t.points then
+        local d = 0
+        for _, pt in ipairs(t.points) do if pt.done then d = d + 1 end end
+        return string.format("%s (%d of %d)", t.custom.title:lower(), d, #t.points)
+    end
     if t.kind == "Patrol" and t.points then
         local d = 0
         for _, pt in ipairs(t.points) do if pt.done then d = d + 1 end end
@@ -1014,6 +1025,13 @@ local function publishStatus()
     elseif t and t.kind == "Hunt" then
         s.where, s.activity, s.goal, s.got, s.need = "The hunting grounds", "Hunt for the clan:", "Prey", t.got, t.need
         s.done = t.got >= t.need
+    elseif t and t.custom and t.points then
+        local nextPt
+        s.got, s.need = 0, #t.points
+        for _, pt in ipairs(t.points) do if pt.done then s.got = s.got + 1 elseif not nextPt then nextPt = pt end end
+        s.where = nextPt and (nextPt.name .. " (marked)") or t.custom.title
+        s.activity, s.goal = t.custom.title .. ":", t.custom.goal or (nextPt and ("Go to " .. nextPt.name)) or "Done"
+        s.done = s.got >= s.need
     elseif t and t.kind == "Patrol" and t.points then
         s.where, s.activity, s.goal, s.got, s.need = "The border", "Patrol the border:", "Border points", 0, #t.points
         for _, pt in ipairs(t.points) do if pt.done then s.got = s.got + 1 end end
@@ -1136,6 +1154,11 @@ local function pickKind(name)
         if (kind == "Gather" or kind == "Bedding" or kind == "Water") and not (rank and r[cfg.gatherMaxRank] and rank <= r[cfg.gatherMaxRank]) then
             x = 0
         end
+        if custom[kind] then
+            local c = custom[kind]
+            if c.minRank and not (rank and r[c.minRank] and rank >= r[c.minRank]) then x = 0 end
+            if c.maxRank and not (rank and r[c.maxRank] and rank <= r[c.maxRank]) then x = 0 end
+        end
         if kind == "Hunt" and plan and plan.hunt == 0 then x = 0 end
         if kind == "Patrol" and plan and plan.patrol == 0 then x = 0 end
         if x > 0 then
@@ -1166,7 +1189,8 @@ local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree
 local function cleanup(t)
     if t.ground then removeMarker(t.ground) mapClear("hunt") end
     for i, pt in ipairs(t.points or {}) do
-        if t.kind ~= "Bedding" and t.kind ~= "Water" then mapClear((t.kind == "Gather" and "gather" or "patrol") .. i) end
+        if t.custom then mapClear("duty" .. i)
+        elseif t.kind ~= "Bedding" and t.kind ~= "Water" then mapClear((t.kind == "Gather" and "gather" or "patrol") .. i) end
         removeMarker(pt)
         removeArea(pt.area)
     end
@@ -1192,6 +1216,24 @@ end
 -- a patrol point / the teacher / the guard spot reached
 local function reached(t, what, i)
     if t.done or not today or today.task ~= t then return end
+    if what == "point" and t.custom then
+        local pt = t.points[i]
+        if pt.done or (i > 1 and not t.points[i - 1].done) then return end
+        pt.done = true
+        removeMarker(pt)
+        mapClear("duty" .. i)
+        log("duties: %s - point %d reached (%s)", t.kind, i, pt.name)
+        if t.custom.cards[i] then card(t.custom.cards[i]) end
+        local nxt = t.points[i + 1]
+        if nxt then
+            nxt.marker = marker(nxt)
+            mapMark("duty" .. (i + 1), nxt, MARK_PATROL, t.custom.title .. ": " .. nxt.name)
+        else
+            taskDone(t)
+        end
+        statusSoon()
+        return
+    end
     if what == "point" and t.kind == "Water" then
         local pt = t.points[1]
         if pt.done then return end
@@ -1259,8 +1301,51 @@ local function reached(t, what, i)
 end
 
 -- the task's setup: markers out in the territory, trigger boxes, companions, the partner
+-- a pack duty's place, now
+local function dutyPoint(spec)
+    spec = tostring(spec or ""):match("^%s*(.-)%s*$")
+    local den = spec:match("^Den:%s*(.+)$")
+    if den then
+        for _, d in ipairs(allClanDens()) do
+            if d.title:lower() == den:lower() then return { X = d.door.X, Y = d.door.Y, Z = d.door.Z } end
+        end
+        return nil
+    end
+    if spec == "Pile" then
+        local c = pileComponent()
+        local q = c and c:GetOwner():K2_GetActorLocation()
+        return q and { X = q.X, Y = q.Y, Z = q.Z } or nil
+    end
+    local zone = spec:match("^Zone:%s*(.+)$")
+    if zone then return Duties.ZonePlace(zone) end
+    local x, y, z = spec:match("^([%-%d%.]+)[%s,]+([%-%d%.]+)[%s,]+([%-%d%.]+)$")
+    if x then return { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) } end
+    local a = Events.Who(spec)
+    local q = a and a:IsValid() and a:K2_GetActorLocation()
+    return q and { X = q.X, Y = q.Y, Z = q.Z } or nil
+end
+
 local function setUp(kind)
     local t = { kind = kind, third = today.third }
+    local c = custom[kind]
+    if c then
+        -- (a pack's own duty: its points in order - the first marked now, the next once it is reached)
+        t.points, t.custom = {}, c
+        for i, spec in ipairs(c.points) do
+            local ok, q = pcall(dutyPoint, spec)
+            if not (ok and q) then
+                log("duties: %s - its point %d (%s) isn't in this world - free time instead", kind, i, spec)
+                t.kind, t.points, t.custom = "Free", nil, nil
+                return t
+            end
+            q.name = c.names[i] or spec
+            t.points[i] = q
+        end
+        t.points[1].marker = marker(t.points[1])
+        mapMark("duty1", t.points[1], MARK_PATROL, c.title .. ": " .. t.points[1].name)
+        log("duties: %s - %d point(s): %s", kind, #t.points, table.concat(c.points, "; "))
+        return t
+    end
     if kind == "Hunt" then
         t.need = math.max(1, (plan and plan.hunt) or (pileValue() < cfg.pileLow and cfg.huntMax or math.random(cfg.huntMin, cfg.huntMax)))
         t.got = 0
@@ -1455,7 +1540,8 @@ taskDone = function(t)
     if t.lead or t.kind == "Free" then return end      -- (its card was the assignment's)
     local after = { Hunt = "Hunt done.", Patrol = "Patrol done.", Train = "Training done." }
     local where = { Pile = "Take your catch to the fresh-kill pile.", Partner = "Talk to " .. (t.who or "them") .. "." }
-    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:lower() .. ".")))
+    -- (MedicineCat -> "medicine cat" here too - the HUD line had it, the card said "medicinecat": VM 2026-11-02)
+    card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:gsub("(%l)(%u)", "%1 %2"):lower() .. ".")))
 end
 
 -- the turn-in happened: the third ends (Pile: the game's own contribution; Partner / a role: a talk with that cat)
@@ -1793,7 +1879,14 @@ local function where()
     local t = today and today.task
     if not t or t.done then return end
     local function dist(q) return q and math.sqrt((q.X - p.X) ^ 2 + (q.Y - p.Y) ^ 2) or math.huge end
-    if t.kind == "Patrol" then
+    if t.custom and t.points then
+        for i, pt in ipairs(t.points) do
+            if not pt.done then
+                if dist(pt) <= t.custom.reach then reached(t, "point", i) end
+                break
+            end
+        end
+    elseif t.kind == "Patrol" then
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.reach then reached(t, "point", i) end end
     elseif t.kind == "Water" and t.points then
         if not t.points[1].done and dist(t.points[1]) <= cfg.gatherReach * 2 then reached(t, "point", 1) end
@@ -1995,6 +2088,31 @@ function Duties.Init(c)
         cfg.repeatMemory = tonumber(tk.RepeatMemory or "") or cfg.repeatMemory
     end
     cfg.pileFactor = tonumber(tk.PileFactor or "") or cfg.pileFactor
+    -- (a pack's own duties: [Duty.<Name>])
+    for section, sec in pairs(ini) do
+        local name = type(sec) == "table" and section:match("^Duty%.([%w_]+)$")
+        if name and sec.Off ~= "1" and (sec.Points or "") ~= "" then
+            local c = { title = (sec.Title or "") ~= "" and sec.Title or name, goal = (sec.Goal or "") ~= "" and sec.Goal or nil,
+                        points = {}, names = {}, cards = {}, reach = tonumber(sec.Reach or "") or 400,
+                        minRank = (sec.MinRank or "") ~= "" and sec.MinRank or nil,
+                        maxRank = (sec.MaxRank or "") ~= "" and sec.MaxRank or nil }
+            for spec in tostring(sec.Points):gmatch("[^;]+") do c.points[#c.points + 1] = spec:match("^%s*(.-)%s*$") end
+            for i = 1, #c.points do
+                if (sec["PointName" .. i] or "") ~= "" then c.names[i] = sec["PointName" .. i] end
+                if (sec["Card" .. i] or "") ~= "" then c.cards[i] = sec["Card" .. i] end
+            end
+            custom[name], KINDS[name], NAMES[name] = c, true, c.title:lower()
+            if sec.Counted == "1" then COUNTED[name] = true end
+            -- (its chances, added to the clan's [Tasks] - a pack writing [Tasks] Morning itself would clash with Clan
+            -- Life's own: Chance = Morning:1, Noon:2)
+            for third, w in tostring(sec.Chance or ""):gmatch("(%a+)%s*:%s*([%d%.]+)") do
+                if third == "Afternoon" then third = "Noon" end
+                cfg.weights[third] = cfg.weights[third] or {}
+                cfg.weights[third][name] = tonumber(w)
+            end
+            log("duties: the duty %s (%s) - %d point(s)", name, c.title, #c.points)
+        end
+    end
     for kind in pairs(KINDS) do
         local steps = Events.Lines(ini["Assign." .. kind], "Step")
         if #steps > 0 then cfg.assignScenes[kind] = steps end

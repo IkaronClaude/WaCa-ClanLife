@@ -25,6 +25,7 @@ Mods/
       shapes.ini         how a cutscene's cats stand (needs WaCa Cutscenes)
       places.ini         named spots a cutscene can play at (needs WaCa Cutscenes)
       roster.ini         custom cats: a cat renamed and re-dressed (needs WaCa Looks)
+      duties.ini         duties of your own in the clan's day (the deputy gives them like hunting or patrols)
 ```
 
 Use only the files you need. A pack never edits anyone else's files; everything adds on (section 9).
@@ -223,6 +224,24 @@ start's party again. Not possible yet: a start rank (the game counts its rank qu
 - **A specialisation for the player's cat** (`roles.ini`, needs WaCa Hunting): `[Role.Herbalist]` with `Hunt`, `Fish`,
   `Combat`, `Guard` multipliers (1 = no change). A scene gives it to the cat for that save:
   `Emit: SetSpecialisation = Herbalist`.
+
+## 8d. Duties of your own (`duties.ini`)
+
+A duty the deputy gives out like hunting or a patrol - a round of places your cat visits in order, each marked on
+screen and on the map, then turned in:
+
+```ini
+[Duty.HerbRound]
+Title = Herb round
+Points = Den:Medicine Cat's den; Pile; S:herbalist     ; a den by its name, Pile, Zone:<code>, a cat / role, X Y Z
+PointName1 = The medicine den                           ; what each point is called on the HUD
+Card1 = The den smells of marigold and old cobweb.      ; a card when it's reached
+Chance = Morning:1, Noon:1                              ; how likely, next to the clan's own duties
+MinRank = Apprentice                                    ; (and MaxRank)
+
+[Task.HerbRound]
+TurnIn = MedicineCat                                    ; Pile, Partner, a role, None
+```
 
 ## 9. Several packs together
 
