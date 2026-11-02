@@ -21,6 +21,10 @@ Mods/
       gatherings.ini     what happens at / around a Gathering
       lines.ini          dialogue: murmurs, lines by day
       start.ini          where a new cat's story begins (day, level, a warrior name)
+      roles.ini          your own specialisations for the player's cat (needs WaCa Hunting)
+      shapes.ini         how a cutscene's cats stand (needs WaCa Cutscenes)
+      places.ini         named spots a cutscene can play at (needs WaCa Cutscenes)
+      roster.ini         custom cats: a cat renamed and re-dressed (needs WaCa Looks)
 ```
 
 Use only the files you need. A pack never edits anyone else's files; everything adds on (section 9).
@@ -66,7 +70,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `If: <conditions>` | the rest of the scene only if they hold |
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
 | `Pose: <pose> @ <who>` | a cat plays a pose (Sit, Growl, Hiss, Sniff ...) |
-| `Emit: <event>` | sends an event other mods (or your own `When = Event:`) hear |
+| `Emit: <event>` | sends an event other mods (or your own `When = Event:`) hear; `Emit: <event> = <value>` sends a value with it (`Emit: SetSpecialisation = Herbalist` - WaCa Hunting gives your cat that role for this save) |
 | `Hook: <name>` | a mod's own Lua code runs here |
 | `Gather: <n> [@ Here\|Pile]` | n clanmates come and stand facing your cat - an audience |
 | `Groups: Tongues\|Prey` | the clan sits in small groups by their ties (sharing tongues in 2s and 3s, prey in 2s-4s); your cat joins one |

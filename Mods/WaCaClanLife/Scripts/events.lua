@@ -1603,7 +1603,10 @@ local function runStep(s, ctx, nextStep, stop)
             took == false and " (not taken - WaCa Core too old?)" or "")
         nextStep()
     elseif k == "Emit" then
-        WaCa.Emit(s.value, ctx)
+        -- (Emit: <event> = <value> hands the value over first - Emit: SetSpecialisation = Herbalist (WaCa Hunting);
+        -- library exercise 2026-11-02: a story had no way to tell another mod anything but a name)
+        local name, value = tostring(s.value):match("^%s*(.-)%s*=%s*(.-)%s*$")
+        if name and name ~= "" then WaCa.Emit(name, value, ctx) else WaCa.Emit(s.value, ctx) end
         nextStep()
     elseif k == "Hook" then
         local fns, i = hooks[s.value] or {}, 0
