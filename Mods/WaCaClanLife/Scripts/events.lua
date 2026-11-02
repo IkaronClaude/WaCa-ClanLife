@@ -477,12 +477,18 @@ local function namedWalk()
     return (ok and W and W.On and W.On()) and W or nil
 end
 
--- the staged cats back where they were (their poses stopped, their AI on again)
+-- the staged cats back where they were (their poses stopped, their AI on again; a cat shown only for the scene hidden
+-- again)
+local shownForScene = {}
 local function putBack(g)
     for _, e in ipairs(g or {}) do
         local a = StaticFindObject(e.path)
         if a and a:IsValid() then
             stopMontage(a)
+            if shownForScene[e.path] then
+                shownForScene[e.path] = nil
+                pcall(function() a.SkeletalMeshComponent:SetVisibility(false, true) end)
+            end
             if e.walker then
                 -- (a named cat walks home - walkers.lua)
                 local W = namedWalk()
@@ -503,8 +509,16 @@ end
 --                          apprentices first, then elders with elders, warriors with warriors. Your cat joins the
 --                          group that suits it best, right where it stands; the others are placed in front of the
 --                          camera (it sits ~1 m behind your cat), each group a small circle facing its own middle.
-local ROLE_NAMES = { [1] = "Kit", [2] = "Apprentice", [3] = "Elder", [4] = "Warrior", [5] = "MedicineCat", [6] = "Queen",
-                     [7] = "Deputy", [8] = "Leader" }
+-- (a cat's job by the game's own EGiverRole, read from the enum - the clan's jobs only, Kit .. Leader)
+local ROLE_NAMES = {}
+pcall(function()
+    local clan = { Kit = true, Apprentice = true, Elder = true, Warrior = true, MedicineCat = true, Queen = true,
+                   Deputy = true, Leader = true }
+    StaticFindObject("/Script/SwtQuest.EGiverRole"):ForEachName(function(n, v)
+        local name = n:ToString():gsub("^.*::", "")
+        if clan[name] then ROLE_NAMES[v] = name end
+    end)
+end)
 local RANK_ROLES = { [0] = "Apprentice", "Apprentice", "Warrior", "Deputy", "Leader" }
 local relations = { mates = {}, tensions = {}, friends = {}, pairs = {} }
 
@@ -920,6 +934,50 @@ function Events.Groups(kind, where, ctx, done)
             if inRole and not (myClan and who.clan and who.clan ~= myClan) then cats[#cats + 1] = who end
         end)
     end
+    -- (A PAIR'S OTHER CAT: the story put two cats together - Pair: A & B, relations.ini [Pairs] - and one takes part
+    -- while the other isn't drawn or is across camp: it comes too - shown while it takes part, hidden again when the
+    -- cats go back (library exercise 2026-11-02: Pair: Mossfeather & Otterfeather, the deputy far off and not drawn -
+    -- she wasn't in any group, the pair did nothing)
+    do
+        local inIt = {}
+        for _, w in ipairs(cats) do inIt[w.name] = true end
+        local wanted = {}
+        for k, v in pairs(Events.VarsLike("Pair:")) do
+            local a, b = k:match("^Pair:(.-) & (.+)$")
+            if a and (tonumber(v) or 0) >= 1 then
+                if inIt[a] and not inIt[b] then wanted[b] = a elseif inIt[b] and not inIt[a] then wanted[a] = b end
+            end
+        end
+        for a, others in pairs(relations.pairs) do
+            for b in pairs(others) do if inIt[a] and not inIt[b] then wanted[b] = a end end
+        end
+        for name, partner in pairs(wanted) do
+            local found
+            for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
+                pcall(function()
+                    if found or not a:IsValid() or a:GetClass():GetFName():ToString():find("Filler") then return end
+                    if (WaCa.CatName(a) or "") ~= name then return end
+                    local who = identity(a)
+                    who.role = ROLE_NAMES[a.GiverRole] or who.role
+                    who.named, who.anchor = true, false
+                    if not (myClan and who.clan and who.clan ~= myClan) then
+                        found = who
+                        -- (the walkers, when on, show and hide a cat they stage themselves)
+                        if not namedWalk() and not a.SkeletalMeshComponent:IsVisible() then
+                            a.SkeletalMeshComponent:SetVisibility(true, true)
+                            shownForScene[(a:GetFullName():gsub("^%S+ ", ""))] = true
+                        end
+                    end
+                end)
+            end
+            if found then
+                cats[#cats + 1] = found
+                log("events: groups - %s comes too (paired with %s by the story)", name, partner)
+            else
+                log("events: groups - %s is paired with %s but isn't in the world - %s sits without", name, partner, partner)
+            end
+        end
+    end
     if #cats == 0 then
         log("events: groups - no clan cats within %.0f m", cfg.gatherRadius / 100)
         return done()
@@ -1306,6 +1364,12 @@ local vars = {}                  -- name -> number or text (kept with the save)
 local providers = {}             -- built-in variables: name -> fn() (Day, Standing, Rank ...)
 
 function Events.Provide(name, fn) providers[name] = fn end
+-- the story variables whose names start with a prefix ("Pair:" ...) -> { name = value }
+function Events.VarsLike(prefix)
+    local out = {}
+    for k, v in pairs(vars) do if k:sub(1, #prefix) == prefix then out[k] = v end end
+    return out
+end
 
 function Events.Var(name)
     if providers[name] then
