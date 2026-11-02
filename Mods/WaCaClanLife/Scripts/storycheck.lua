@@ -65,6 +65,18 @@ function StoryCheck.Run()
     local problems, warnings = {}, {}
     local function problem(file, section, key, text) problems[#problems + 1] = string.format("%s.ini [%s] %s: %s", file, section, key, text) end
     local function warning(file, section, key, text) warnings[#warnings + 1] = string.format("%s.ini [%s] %s: %s", file, section, key, text) end
+    -- (a Choice / a cutscene's Ask: <variable> = <question>; 2 to 4 answers - keys 1-4 answer, a 5th can never be
+    -- picked; with one the question is skipped. Library exercise 2026-11-02)
+    local function choiceShape(file, section, key, value)
+        local var, rest = tostring(value):match("^%s*([%w%.%_]+)%s*=%s*(.-)%s*$")
+        local n = 0
+        for _ in tostring(rest or ""):gmatch("[^;]+") do n = n + 1 end
+        if not var or n < 3 then
+            problem(file, section, key, "a choice needs <variable> = <question>; <answer>; <answer> (got '" .. tostring(value) .. "')")
+        elseif n > 5 then
+            warning(file, section, key, string.format("%d answers - only the first 4 can be picked (keys 1-4)", n - 1))
+        end
+    end
     local cutscenes = WaCa.Latest and WaCa.Latest("cutscenes.names")
     local known = {}
     for _, n in ipairs(type(cutscenes) == "table" and cutscenes or {}) do known[n] = true end
@@ -96,6 +108,7 @@ function StoryCheck.Run()
                                 if name then set[name] = true end
                             end
                             if step.kind == "If" then tested[#tested + 1] = { file, section, key, step.value } end
+                            if step.kind == "Choice" then choiceShape(file, section, key, step.value) end
                             for _, who in ipairs({ step.who, step.value }) do
                                 local role = who and who:match("^(S:[%w_]+)")
                                 if role and not cast[role] then
@@ -201,6 +214,8 @@ function StoryCheck.Run()
         for section, t in pairs(cs) do
             if type(t) == "table" and tostring(section):match("^Cutscene%.") then
                 for k, v in pairs(t) do
+                    local ask = tostring(k):match("^Beat%d+$") and tostring(v):match("^%s*[%d%.]+%s+Ask:%s*(.-)%s*$")
+                    if ask then choiceShape("cutscenes", section, k, ask) end
                     local name = tostring(k):match("^Beat%d+$") and (tostring(v):match("^%s*[%d%.]+%s+Set:%s*([%w%.%_]+)") or tostring(v):match("^%s*[%d%.]+%s+Ask:%s*([%w%.%_]+)"))
                     if name then set[name] = true end
                 end
@@ -263,7 +278,22 @@ local function storyText()
     end
     return parts
 end
+-- (Watch reloads a mod the way UE4SS's own auto-reload does - which is OFF unless UE4SS-settings.ini says
+-- EnableAutoReloadingLuaMods = 1: without it a save did nothing, silently. Library exercise 2026-11-02)
+local function autoReloadOn()
+    local modsDir = modDir:match("^(.*)[/\\][^/\\]+$") or modDir
+    for _, rel in ipairs({ "/../UE4SS-settings.ini", "/../../UE4SS-settings.ini" }) do
+        local ini = WaCa.ReadIni(modsDir .. rel)
+        if ini then return (((ini["General"] or {}).EnableAutoReloadingLuaMods or "0"):match("^%s*1")) ~= nil, modsDir .. rel end
+    end
+    return nil
+end
 local function watch(every)
+    local on, where = autoReloadOn()
+    if on == false then
+        log("story check: Watch is on, but UE4SS's EnableAutoReloadingLuaMods is 0 (%s) - an edited story file will NOT reload anything; set it to 1 there, or restart the game after each edit", tostring(where))
+        WaCa.Emit("ShowLine", "Story check: Watch needs EnableAutoReloadingLuaMods = 1 in UE4SS-settings.ini", 8)
+    end
     local seen = storyText()
     local looks = 0
     local function look()

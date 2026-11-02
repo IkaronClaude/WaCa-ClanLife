@@ -297,6 +297,12 @@ Cutscenes for `cutscenes.ini` / `shapes.ini` / `places.ini`, WaCa Looks for `ros
 the story check runs again, and the change plays at its next moment. Cats a reload catches mid-scene go back where
 they were. Switch it off again for normal play.
 
+Watch needs UE4SS's own auto-reload: `EnableAutoReloadingLuaMods = 1` under `[General]` in `UE4SS-settings.ini` (next
+to the game's `ue4ss` folder; UE4SS ships it at 0). Without it nothing reloads - the story check says so when the game
+starts. **Save your game before a writing session:** UE4SS's auto-reload very rarely freezes the game partway through
+a reload (about once in 35 reloads on the test machine - the game stops responding and has to be ended). Set it back
+to 0 for normal play.
+
 ## 11. A worked example: a loner visits
 
 The example pack's loner takes four small pieces:
