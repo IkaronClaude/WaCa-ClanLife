@@ -98,6 +98,16 @@ function Hud.Init(c)
         log("hud: off (clanlife.ini [Hud] On = 0)")
         return
     end
+    -- (WaCa Core draws the panels of every mod, stacked - WaCa.HudPanel; this copy draws its own only with an older
+    -- Core that hasn't it: library exercise 2026-11-02, a second mod's panel would have gone over this one)
+    if WaCa.HudPanel then
+        WaCa.Subscribe("clan.status", function(s)
+            if type(s) == "table" then s.order = 0 end         -- (the clan's day first, under the game's quest)
+            WaCa.HudPanel("WaCaClanLife.day", s)
+        end)
+        log("hud: the day status goes to WaCa Core's panels")
+        return
+    end
     WaCa.Subscribe("clan.status", function(s)
         status = s
         if not (panel and panel:IsValid()) then Hud.Attach() end
