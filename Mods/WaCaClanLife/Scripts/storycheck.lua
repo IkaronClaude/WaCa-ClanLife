@@ -18,7 +18,7 @@ local KINDS = { Add = true, Bond = true, Card = true, Choice = true, Cutscene = 
 local PHASES = { "Morning", "Noon", "Afternoon", "Evening", "Night" }
 
 local function isStepKey(file, section, key)
-    if file == "days" then
+    if file == "days" or file:match("/story$") then
         for _, p in ipairs(PHASES) do
             if key:match("^" .. p .. "%d*$") or key:match("^" .. p .. "Start%d*$") or key:match("^" .. p .. "After%d*$") then
                 return section:match("^Day%.") ~= nil
@@ -87,6 +87,18 @@ function StoryCheck.Run()
     for _, file in ipairs(files) do
         loaded[file] = WaCa.ReadContent(modDir .. "/config/" .. file .. ".ini", file) or {}
     end
+    -- (each pack's own story - content/story.ini, days.lua - checked on its own: two packs' [Story] are no conflict)
+    pcall(function()
+        local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")
+        for _, mod in ipairs(modsDir and WaCa.EnabledMods(modsDir) or {}) do
+            local ini = WaCa.ReadIni(modsDir .. "/" .. mod .. "/content/story.ini")
+            if ini then
+                local name = mod .. "/story"
+                files[#files + 1] = name
+                loaded[name] = ini
+            end
+        end
+    end)
     -- (pass 1: the steps - and what they set)
     for _, file in ipairs(files) do
         for section, t in pairs(loaded[file]) do
@@ -118,6 +130,9 @@ function StoryCheck.Run()
                         end
                     elseif key == "Require" or key == "If" then
                         tested[#tested + 1] = { file, section, key, v }
+                    elseif key == "Advance" and type(v) == "string" and v:match("^%s*If:") then
+                        -- (a story day's Advance = If: <conditions> - its variables must be set somewhere)
+                        tested[#tested + 1] = { file, section, key, v:match("^%s*If:%s*(.-)%s*$") }
                     end
                 end
             end
@@ -156,9 +171,12 @@ function StoryCheck.Run()
         -- (a pack's own days only - Clan Life's examples are off with the rest)
         local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")
         for _, mod in ipairs(modsDir and WaCa.EnabledMods(modsDir) or {}) do
-            local ini = WaCa.ReadIni(modsDir .. "/" .. mod .. "/content/days.ini") or {}
+            -- (its days.ini adds to the main story's days; its story.ini is a story of its own - both need story days)
             local nDays = 0
-            for section in pairs(ini) do if tostring(section):match("^Day%.%d+$") then nDays = nDays + 1 end end
+            for _, f in ipairs({ "days", "story" }) do
+                local ini = WaCa.ReadIni(modsDir .. "/" .. mod .. "/content/" .. f .. ".ini") or {}
+                for section in pairs(ini) do if tostring(section):match("^Day%.%d+$") then nDays = nDays + 1 end end
+            end
             if nDays > 0 then
                 warning("days", "Days", "On", mod .. " writes " .. nDays .. " story day(s), but story days are off - they "
                     .. "won't play (Clan Life's config/days.ini [Days] On = 1, with the day / night cycle on)")
@@ -260,7 +278,7 @@ end
 local WATCHED = { clanevents = "WaCaClanLife", days = "WaCaClanLife", gatherings = "WaCaClanLife",
                   duties = "WaCaClanLife", events = "WaCaClanLife", lines = "WaCaClanLife", start = "WaCaClanLife",
                   cutscenes = "WaCaCutscenes", shapes = "WaCaCutscenes", places = "WaCaCutscenes",
-                  roster = "WaCaLooks", roles = "WaCaHunting" }
+                  roster = "WaCaLooks", roles = "WaCaHunting", story = "WaCaClanLife" }
 -- the story files' text, per mod that reads them
 local function storyText()
     local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")

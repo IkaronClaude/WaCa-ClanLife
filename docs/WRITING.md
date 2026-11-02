@@ -178,6 +178,24 @@ A pack can add to a day Clan Life (or another pack) already writes: numbered bea
 When a day begins, the log lists everything it holds (`days: story day 2 holds: events HerbCouncil; Morning; ...
 EveningAfter1`). A mod can move the story with `WaCa.Emit("SetStoryDay", n)`.
 
+`Advance = If: <conditions>` moves on once story variables hold (`If: ShelterQuill > 0` - the player has answered).
+
+### 7b. A story of your own (`story.ini`)
+
+A pack's `content/story.ini` is a story of its own, beside the main one: `[Story]` with `Name` and `Priority` (lower
+plays first), then its own `[Day.N]` - the same keys as `days.ini`. It has **its own day counter**: every calendar day
+each story is judged on its own `Advance`, and a story that isn't ready repeats its day - the stories never read each
+other's day numbers, so a pack can be longer or shorter than the main story. Its beats play after the main story's in
+each third; the day's duties, season and weather stay the main story's. Where every story is, is kept with the save.
+
+`Sync = <Name>` on a day makes it a meeting point: that story waits on that day until every story that declares the
+same `Sync` is on its own day for it and ready, then they all go on together. There is no limit to the wait - one story
+repeating its day while another catches up is the normal case. The log says who waits for whom
+(`days: the main story waits at the sync point Apprentice (its day 2) for The herbalist's lessons (day 3, ...)`).
+Not built yet: holding the game's own quests at a sync point.
+
+The example pack's `story.ini` is a three-day story whose second day waits for the loner question to be answered.
+
 ## 8. Dialogue (`lines.ini`)
 
 - **Murmurs**: what the clan says as your cat walks past. A set of lines, said when its conditions hold:
