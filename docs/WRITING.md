@@ -256,8 +256,10 @@ WaCa Cutscenes checks your cutscenes the same way (section 6).
 Read it after every change; "No problems found." means the files read cleanly.
 
 **Writing without restarting:** set `Watch = 1` under `[StoryCheck]` in Clan Life's `config/clanlife.ini`. Then every
-time you save a story file, Clan Life (and WaCa Cutscenes, for your scenes) reloads within a few seconds, the story
-check runs again, and the change plays at its next moment. Switch it off again for normal play.
+time you save a story file, the mod that reads it reloads within a few seconds - Clan Life for its own files, WaCa
+Cutscenes for `cutscenes.ini` / `shapes.ini` / `places.ini`, WaCa Looks for `roster.ini`, WaCa Hunting for `roles.ini` -
+the story check runs again, and the change plays at its next moment. Cats a reload catches mid-scene go back where
+they were. Switch it off again for normal play.
 
 ## 11. A worked example: a loner visits
 

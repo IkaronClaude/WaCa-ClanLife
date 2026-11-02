@@ -185,19 +185,28 @@ end
 -- nothing until the game restarted (library exercise 2026-11-01). With Watch on, every few seconds the story files
 -- (Clan Life's own and every pack's content/) are compared with what was read; a change reloads Clan Life the way
 -- UE4SS reloads an edited mod - its main.lua is rewritten as it is (same bytes, a new time), UE4SS sees the change.
-local WATCHED = { "clanevents", "days", "gatherings", "duties", "events", "lines", "start", "roster", "cutscenes" }
+-- (each story file and the mod that reads it - a change reloads exactly that mod: library exercise 2026-11-02, a
+-- pack's roster.ini / roles.ini edited with Watch on did nothing till a restart; shapes / places weren't watched)
+local WATCHED = { clanevents = "WaCaClanLife", days = "WaCaClanLife", gatherings = "WaCaClanLife",
+                  duties = "WaCaClanLife", events = "WaCaClanLife", lines = "WaCaClanLife", start = "WaCaClanLife",
+                  cutscenes = "WaCaCutscenes", shapes = "WaCaCutscenes", places = "WaCaCutscenes",
+                  roster = "WaCaLooks", roles = "WaCaHunting" }
+-- the story files' text, per mod that reads them
 local function storyText()
     local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")
     local parts = {}
-    local function add(path)
+    local function add(path, owner)
         local f = io.open(path, "rb")
-        if f then parts[#parts + 1] = path .. "\0" .. f:read("*a") f:close() end
+        if f then
+            parts[owner] = (parts[owner] or "") .. path .. "\0" .. f:read("*a") .. "\1"
+            f:close()
+        end
     end
-    for _, n in ipairs(WATCHED) do add(modDir .. "/config/" .. n .. ".ini") end
+    for n, owner in pairs(WATCHED) do add(modDir .. "/config/" .. n .. ".ini", owner) end
     for _, mod in ipairs(modsDir and WaCa.EnabledMods(modsDir) or {}) do
-        for _, n in ipairs(WATCHED) do add(modsDir .. "/" .. mod .. "/content/" .. n .. ".ini") end
+        for n, owner in pairs(WATCHED) do add(modsDir .. "/" .. mod .. "/content/" .. n .. ".ini", owner) end
     end
-    return table.concat(parts, "\1")
+    return parts
 end
 local function watch(every)
     local seen = storyText()
@@ -205,13 +214,28 @@ local function watch(every)
     local function look()
         local now = storyText()
         looks = looks + 1
-        if looks == 1 then log("story check: watch - first look (%d bytes of story files)", #now) end
-        if now ~= seen then
+        if looks == 1 then
+            local n = 0
+            for _, t in pairs(now) do n = n + #t end
+            log("story check: watch - first look (%d bytes of story files)", n)
+        end
+        local changed = {}
+        for owner, t in pairs(now) do if seen[owner] ~= t then changed[#changed + 1] = owner end end
+        for owner in pairs(seen) do if now[owner] == nil then changed[#changed + 1] = owner end end
+        if #changed > 0 then
             seen = now
-            log("story check: a story file changed - Clan Life (and WaCa Cutscenes, its scenes) reload (Watch)")
-            -- (WaCa Cutscenes reads the cutscenes.ini files - it reloads too)
+            table.sort(changed)
+            log("story check: a story file changed - %s reload (Watch)", table.concat(changed, ", "))
+            -- (each mod whose files changed is reloaded the way UE4SS reloads an edited mod; Clan Life last - this copy
+            -- goes with it, and its watch with it)
             local modsDir = modDir:match("^(.*)[/\\][^/\\]+$") or modDir
-            for _, path in ipairs({ modsDir .. "/WaCaCutscenes/Scripts/main.lua", modDir .. "/Scripts/main.lua" }) do
+            local paths, self = {}, false
+            for _, owner in ipairs(changed) do
+                if owner == "WaCaClanLife" then self = true
+                else paths[#paths + 1] = modsDir .. "/" .. owner .. "/Scripts/main.lua" end
+            end
+            if self then paths[#paths + 1] = modDir .. "/Scripts/main.lua" end
+            for _, path in ipairs(paths) do
                 local f = io.open(path, "rb")
                 local src = f and f:read("*a")
                 if f then f:close() end
@@ -220,7 +244,7 @@ local function watch(every)
                     if w then w:write(src) w:close() end
                 end
             end
-            return
+            if self then return end
         end
         ExecuteInGameThreadWithDelay(math.floor(every * 1000), look)
     end
