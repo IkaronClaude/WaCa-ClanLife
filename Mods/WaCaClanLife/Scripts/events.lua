@@ -177,6 +177,9 @@ local function answerChoice(key)
     if w and w:IsValid() then pcall(function() w:RemoveFromParent() end) end
     log("events: Choice %s - answer %d (%s)", c.var, n, c.answers[n + 1])
     Events.SetVar(c.var, n)
+    -- (always said - SetVar says nothing when the value is the same as before: the same answer twice left a
+    -- cutscene's Ask waiting, VM 2026-11-02)
+    WaCa.Emit("ChoiceAnswered", c.var, n)
     c.done()
 end
 
