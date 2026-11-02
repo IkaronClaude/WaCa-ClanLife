@@ -1387,8 +1387,58 @@ function Walkers.IdleCats(center, radius)
     return out
 end
 
+-- CATS AWAY FROM HOME WHEN CLAN LIFE RELOADS (VM 2026-11-01: a Lua reload mid-trip left walkers stranded and hidden;
+-- "dev-only" - until the story check's Watch = 1 reloaded Clan Life every time a writer saved a story file): the cats
+-- the walkers have moved - their homes, hidden on the way (faded) or shown by them (shown) - are kept in
+-- Saved/WaCaWalkersAway.ini whenever that set changes; Clan Life starting again puts the ones still in the world home
+-- as they were.
+local awayFile, awaySig
+local function awayPath() return WaCa.SaveDir() .. "/../WaCaWalkersAway.ini" end
+local function keepAway()
+    local parts, sec, order = {}, {}, {}
+    for path, m in pairs(movers) do
+        if m.home then
+            local flags = (m.faded and "faded" or "") .. "," .. (m.shown and "shown" or "")
+            parts[#parts + 1] = path .. flags
+            local r = m.homeRot or {}
+            sec[path] = string.format("%.0f %.0f %.0f %.0f|%s", m.home.X, m.home.Y, m.home.Z, r.Yaw or 0, flags)
+            order[#order + 1] = path
+        end
+    end
+    table.sort(parts)
+    local sig = table.concat(parts, ";")
+    if sig == awaySig then return end
+    awaySig = sig
+    sec.__order = order
+    pcall(WaCa.WriteIni, awayPath(), { Away = sec, __order = { "Away" } },
+        "; WaCa Clan Life - the cats the walkers have moved from home (put back when Clan Life starts again)")
+end
+local function bringBack()
+    local ini = WaCa.ReadIni(awayPath()) or {}
+    local n = 0
+    for path, v in pairs(ini["Away"] or {}) do
+        local a = path ~= "__order" and StaticFindObject(path)
+        local x, y, z, yaw, flags = tostring(v):match("^(%S+) (%S+) (%S+) (%S+)|(.*)$")
+        if a and a:IsValid() and x then
+            pcall(function()
+                a:K2_SetActorLocationAndRotation({ X = tonumber(x), Y = tonumber(y), Z = tonumber(z) },
+                    { pitch = 0, Yaw = tonumber(yaw), Roll = 0 }, false, {}, true)
+                playWalk(a, false)
+                if flags:find("faded") then a:SetActorHiddenInGame(false) end
+                if flags:find("shown") then a.SkeletalMeshComponent:SetVisibility(false, true) end
+            end)
+            n = n + 1
+        end
+    end
+    if n > 0 then log("walkers: %d cat(s) still away from a run before (a reload) - put back home", n) end
+    awaySig = nil
+    pcall(WaCa.WriteIni, awayPath(), { Away = { __order = {} }, __order = { "Away" } }, "; WaCa Clan Life - nobody away")
+end
+
 function Walkers.Init(c)
     WaCa, log, Events, Duties = c.WaCa, c.log, c.Events, c.Duties
+    -- (the world up already - a reload: the cats a run before left away go home first)
+    ExecuteInGameThreadWithDelay(2000, function() if WaCa.CurrentSlot() then pcall(bringBack) end end)
     local ini = WaCa.ReadContent(c.modDir .. "/config/walkers.ini", "walkers") or {}
     local w = ini["Walkers"] or {}
     cfg.on = c.part("Walkers", w.On)
@@ -1447,6 +1497,7 @@ function Walkers.Init(c)
     local function loop()
         local ok, err = pcall(tick)
         if not ok then log("walkers: a step failed (%s)", tostring(err)) end
+        pcall(keepAway)
         ExecuteInGameThreadWithDelay(50, loop)
     end
     ExecuteInGameThreadWithDelay(1000, loop)
