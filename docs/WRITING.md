@@ -71,7 +71,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
 | `Pose: <pose> @ <who>` | a cat plays a pose (Sit, Growl, Hiss, Sniff ...) |
 | `Emit: <event>` | sends an event other mods (or your own `When = Event:`) hear; `Emit: <event> = <value>` sends a value with it (`Emit: SetSpecialisation = Herbalist` - WaCa Hunting gives your cat that role for this save) |
-| `Hook: <name>` | a mod's own Lua code runs here |
+| `Hook: <name>` | a mod's own Lua code runs here, and the scene waits for it (the mod announces the hook - WaCa Core's API.md "A part in a story"); a hook no mod handles is skipped |
 | `Gather: <n> [@ Here\|Pile]` | n clanmates come and stand facing your cat - an audience |
 | `Groups: Tongues\|Prey` | the clan sits in small groups by their ties (sharing tongues in 2s and 3s, prey in 2s-4s); your cat joins one |
 | `Pair: A & B` / `Part: A & B` | from now on those two sit together / never together (kept with the save; `Set: Pair:A & B = 0` lifts it). A paired cat across camp comes to the groups too |

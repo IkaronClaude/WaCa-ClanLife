@@ -21,7 +21,8 @@
 --                                waits until it is over (without that mod: goes straight on)
 --   Hook: <name>                 BLOCKING: every function registered with Events.Hook(name, fn) runs in turn as
 --                                fn(context, continue) and calls continue() when its part is over (a mod's own
---                                cutscene, a minigame, a choice ...)
+--                                cutscene, a minigame, a choice ...); then ANOTHER mod's, if one announced it
+--                                (hook.<name>): StoryHook(name) -> its StoryHookDone(name), at most HookWait s
 --   Set: <var> = <value>         a STORY VARIABLE (kept with the save): e.g. Set: LeaderAnger = 2
 --   Add: <var> <number>          e.g. Add: LeaderFavour 3, Add: GatheringBan -1
 --   If: <conditions>             the rest of the scene only if they hold: <var> <op> <value>[, ...], op = < <= = != >= >
@@ -1425,6 +1426,37 @@ function Events.Hook(name, fn)
     table.insert(hooks[name], fn)
 end
 
+-- ANOTHER MOD'S HOOK (library exercise 2026-11-02: every UE4SS mod has its own Lua state - Events.Hook is reachable
+-- only from inside Clan Life, so "Hook: <name> - a mod's own Lua code runs here" could never reach another mod's code).
+-- A mod announces the hooks it handles - WaCa.Publish("hook.<Name>", true, true) - and listens for
+-- WaCa.On("StoryHook", function(name) ... end); when its part is over it says so: WaCa.Emit("StoryHookDone", name).
+-- The scene waits for that (at most [Events] HookWait s - 60), then goes on.
+local pendingHooks = {}           -- name -> its continuation
+local hookWait = 60
+local function crossHook(name, ctx, continue)
+    local announced = WaCa.Latest and WaCa.Latest("hook." .. name)
+    if not announced then
+        if not hooks[name] then log("events: Hook: %s - no mod handles it (announce it: WaCa.Publish('hook.%s', true, true)); going on", name, name) end
+        return continue()
+    end
+    local done = false
+    pendingHooks[name] = function()
+        if done then return end
+        done = true
+        log("events: Hook: %s - done", name)
+        continue()
+    end
+    log("events: Hook: %s - another mod's part; waiting for its StoryHookDone (at most %d s)", name, hookWait)
+    WaCa.Emit("StoryHook", name)
+    ExecuteInGameThreadWithDelay(hookWait * 1000, function()
+        if done then return end
+        log("events: Hook: %s - no StoryHookDone in %d s; going on", name, hookWait)
+        local k = pendingHooks[name]
+        pendingHooks[name] = nil
+        if k then k() end
+    end)
+end
+
 local function fill(text, ctx)
     return (tostring(text):gsub("{(%u+)}", function(k) return ctx and ctx[k] ~= nil and tostring(ctx[k]) or "{" .. k .. "}" end))
 end
@@ -1612,7 +1644,7 @@ local function runStep(s, ctx, nextStep, stop)
         local fns, i = hooks[s.value] or {}, 0
         local function nextHook()
             i = i + 1
-            if i > #fns then return nextStep() end
+            if i > #fns then return crossHook(s.value, ctx, nextStep) end
             local ok, err = pcall(fns[i], ctx, nextHook)
             if not ok then
                 log("events: hook %s failed (%s)", s.value, tostring(err))
@@ -1865,6 +1897,12 @@ function Events.Init(c)
         if name then Events.SetVar(tostring(name), value) end
     end)
     -- (other mods: play steps now - step lines as in clanevents.ini, joined by "|": "Groups: Prey|Wait: 3|Release")
+    WaCa.On("StoryHookDone", function(name)
+        local k = pendingHooks[tostring(name)]
+        pendingHooks[tostring(name)] = nil
+        if k then k() end
+    end)
+    hookWait = tonumber((ini["Events"] or {}).HookWait or "") or hookWait
     WaCa.On("PlayScene", function(text)
         local steps = { context = {} }                  -- (a scene's own context: its gathered cats, its place)
         for line in tostring(text or ""):gmatch("[^|]+") do
