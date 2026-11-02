@@ -147,7 +147,8 @@ wrote. The full key list is at the top of Clan Life's `config/days.ini`.
 ```ini
 [Murmur.LonerTalk]
 Require = SawLoner >= 1
-Who = All                   ; or Elder, Warrior, Apprentice, Queen ... (the cat's role)
+Who = All                   ; or Elder, Warrior, Apprentice, Queen ... (the cat's role), a cat's name, E:<role>,
+                            ; or your own role S:herbalist (the cat [Cast] gives it)
 Line1 = That loner smelled of the Thunderpath.
 Line2 = {LEADER} was kind to let him rest - kinder than I'd have been.
 ```

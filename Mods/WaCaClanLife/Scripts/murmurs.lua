@@ -45,6 +45,21 @@ local function names(cat, cats)
     return n
 end
 
+-- who may say a set: All, a part of a story role's name (Elder, Warrior ...), E:<story role>, a cat's name, or a pack's
+-- own role S:<role> - the cat its [Cast] gives it (library exercise 2026-11-02: a pack's herbalist couldn't murmur)
+local function whoFits(who, cat)
+    if who == "All" then return true end
+    local spec = who
+    if who:match("^S:") then
+        local c = Events.CastSpecs and Events.CastSpecs() or {}
+        spec = type(c[who]) == "string" and c[who] or ""
+    end
+    local role = spec:match("^E:(.+)$")
+    if role then return (cat.story or "") == role end
+    if spec ~= "" and spec == cat.name then return true end
+    return not who:match("^S:") and (cat.story or ""):find(who .. "$") ~= nil
+end
+
 local function check()
     local me = pawn()
     if not me or (WaCa.InMenu and WaCa.InMenu()) then return end
@@ -62,7 +77,7 @@ local function check()
     if math.random(100) > cfg.chance then return end
     local lines, from = {}, {}
     for _, e in ipairs(cfg.entries) do
-        if (e.who == "All" or (cat.story or ""):find(e.who .. "$")) and Events.Check(e.require) then
+        if whoFits(e.who, cat) and Events.Check(e.require) then
             for _, l in ipairs(e.lines) do lines[#lines + 1] = l end
             from[#from + 1] = e.name
         end
