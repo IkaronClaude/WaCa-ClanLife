@@ -73,7 +73,33 @@ local function place()
     end)
     local face = math.deg(math.atan(out.Y, out.X))
     local placed = {}
+    -- (a kit already standing there from before a reload of Clan Life - the paths kept in memory are gone with it: it
+    -- is taken up again, not spawned twice)
+    local standing = {}
+    for _, c in ipairs(FindAllOf("BP_WrcSK_Customization_Cat_C") or {}) do
+        pcall(function()
+            if c:IsValid() and not c.bHidden then
+                local q = c:K2_GetActorLocation()
+                if (q.X - door.X) ^ 2 + (q.Y - door.Y) ^ 2 < (cfg.spread * 3) ^ 2 then
+                    local nm = WaCa.CatName(c) or ""
+                    standing[nm] = standing[nm] or {}
+                    table.insert(standing[nm], pathOf(c))
+                end
+            end
+        end)
+    end
     for i, kit in ipairs(kits) do
+        if not spawned[kit.name] and standing[kit.name] then
+            -- (one kept; copies more reloads left behind - before this was fixed each one spawned the kits again - go)
+            local list = standing[kit.name]
+            spawned[kit.name] = list[1]
+            for j = 2, #list do
+                local extra = StaticFindObject(list[j])
+                if extra and extra:IsValid() then WaCa.Despawn(extra) end
+            end
+            log("kits: %s was by the nursery already (from before a reload) - kept%s", kit.name,
+                #list > 1 and string.format(", %d extra cop(ies) removed", #list - 1) or "")
+        end
         local a = spawned[kit.name] and StaticFindObject(spawned[kit.name])
         if not (a and a:IsValid()) then
             -- (a half ring in front of the door: kit 1 straight out, the others to its sides)
