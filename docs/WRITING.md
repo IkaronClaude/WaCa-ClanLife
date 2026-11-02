@@ -83,7 +83,9 @@ S:loner = Rogue:Quill          ; a cat who isn't in the world - brought in for e
 S:envoy = Clan:ShadowClan      ; another Clan's cat (Clan:<Clan>.<Part> for its leader / deputy ...)
 ```
 
-Your scenes then say `@ S:herbalist`, and your cutscenes say `B = S:loner`.
+Your scenes then say `@ S:herbalist`, and your cutscenes say `B = S:loner`. A role played by another Clan's cat
+(`Clan:ShadowClan`) is a cat made up from the save's cats the first time; it is kept with the save, so your envoy is the
+same cat in every scene after.
 
 ## 5. Conditions and story variables
 
