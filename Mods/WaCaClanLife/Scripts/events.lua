@@ -461,6 +461,7 @@ function Events.Gather(n, where, ctx, done)
             names[#names + 1] = (e.path:match("[^.:]+$") or e.path) .. " (held: " .. (held[i] ~= "" and held[i] or "nothing") .. ")"
         end
         log("events: gather - %d clanmate(s) around %s: %s", #ctx.gathered, where or "your cat", table.concat(names, ", "))
+        keepGathered(ctx.gathered)
         fadeScreen(1, 0, FADE)
         ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done)
     end)
@@ -502,6 +503,48 @@ local function putBack(g)
         end
     end
 end
+
+-- A RELOAD WHILE CATS ARE GATHERED (VM 2026-11-02: Clan Life reloaded mid-'Groups: Tongues' - six cats stayed in their
+-- circles, their AI stopped, for good; the story check's Watch = 1 reloads Clan Life whenever a writer saves a story
+-- file): the gathered cats - where they came from, whether the scene showed them - are kept in
+-- Saved/WaCaSceneGathered.ini while a scene holds them; Clan Life starting again puts them back.
+local function gatheredPath() return WaCa.SaveDir() .. "/../WaCaSceneGathered.ini" end
+local function keepGathered(g)
+    local sec, order = {}, {}
+    for i, e in ipairs(g or {}) do
+        if e.loc then
+            local k = "c" .. i
+            sec[k] = string.format("%s|%.1f %.1f %.1f %.1f|%s", e.path, e.loc.X, e.loc.Y, e.loc.Z, e.rot and e.rot.Yaw or 0,
+                shownForScene[e.path] and "shown" or "")
+            order[#order + 1] = k
+        end
+    end
+    sec.__order = order
+    pcall(WaCa.WriteIni, gatheredPath(), { Gathered = sec, __order = { "Gathered" } },
+        "; WaCa Clan Life - cats a scene has gathered (put back if Clan Life reloads)")
+end
+local function clearGathered()
+    pcall(WaCa.WriteIni, gatheredPath(), { Gathered = { __order = {} }, __order = { "Gathered" } }, "; WaCa Clan Life - nobody gathered")
+end
+local function recoverGathered()
+    local ini = WaCa.ReadIni(gatheredPath()) or {}
+    local n = 0
+    for k, v in pairs(ini["Gathered"] or {}) do
+        local path, x, y, z, yaw, flags = tostring(v):match("^(.-)|(%S+) (%S+) (%S+) (%S+)|(.*)$")
+        local a = k ~= "__order" and path and StaticFindObject(path)
+        if a and a:IsValid() then
+            pcall(function() stopMontage(a) end)
+            pcall(function() a:K2_SetActorLocationAndRotation({ X = tonumber(x), Y = tonumber(y), Z = tonumber(z) },
+                { pitch = 0, Yaw = tonumber(yaw), Roll = 0 }, false, {}, true) end)
+            pcall(function() holdAI(a, false) end)
+            if flags:find("shown") then pcall(function() a.SkeletalMeshComponent:SetVisibility(false, true) end) end
+            n = n + 1
+        end
+    end
+    clearGathered()
+    if n > 0 then log("events: %d cat(s) still gathered by a scene before a reload - back in their places", n) end
+end
+function Events.RecoverGathered() pcall(recoverGathered) end
 
 -- Groups: Tongues | Prey   the evening in camp (operator 2026-10-28): not one ring but small groups - sharing tongues in
 --                          circles of 2-3, sharing prey in 2s and 3s with now and then a 4 around a big piece. Who sits
@@ -1152,6 +1195,7 @@ function Events.Groups(kind, where, ctx, done)
             end
             end
         end
+        keepGathered(ctx.gathered)
         log("events: groups - %d clanmate(s) placed, %d round cats that stay put%s", n, #ctx.anchors,
             cfg.walkIn and (", " .. #walking .. " walking in") or "")
         fadeScreen(1, 0, FADE)
@@ -1317,6 +1361,7 @@ function Events.Release(ctx, done)
         pcall(function() stopMontage(pc().Pawn) end)
         ctx.gathered = nil
         staging = false
+        clearGathered()
         log("events: release - the clanmates are back in their places")
         fadeScreen(1, 0, FADE)
         if done then ExecuteInGameThreadWithDelay(math.floor(FADE * 1000), done) end
@@ -1897,6 +1942,8 @@ function Events.Init(c)
         if name then Events.SetVar(tostring(name), value) end
     end)
     -- (other mods: play steps now - step lines as in clanevents.ini, joined by "|": "Groups: Prey|Wait: 3|Release")
+    -- (a reload with the world up: cats a scene before had gathered go back)
+    ExecuteInGameThreadWithDelay(2500, function() if WaCa.CurrentSlot() then Events.RecoverGathered() end end)
     WaCa.On("StoryHookDone", function(name)
         local k = pendingHooks[tostring(name)]
         pendingHooks[tostring(name)] = nil
