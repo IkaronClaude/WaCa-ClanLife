@@ -194,6 +194,19 @@ function StoryCheck.Run()
             end
         end
     end
+    -- (variables a cutscene sets - WaCa Cutscenes' Set: beat, library exercise 2026-11-02)
+    pcall(function()
+        local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")
+        local cs = modsDir and WaCa.ReadContent(modsDir .. "/WaCaCutscenes/config/cutscenes.ini", "cutscenes") or {}
+        for section, t in pairs(cs) do
+            if type(t) == "table" and tostring(section):match("^Cutscene%.") then
+                for k, v in pairs(t) do
+                    local name = tostring(k):match("^Beat%d+$") and tostring(v):match("^%s*[%d%.]+%s+Set:%s*([%w%.%_]+)")
+                    if name then set[name] = true end
+                end
+            end
+        end
+    end)
     -- (pass 2: the conditions - readable, and every variable they test set somewhere)
     for _, e in ipairs(tested) do
         local names, bad = condVars(e[4])
@@ -301,6 +314,15 @@ function StoryCheck.Init(c)
     if (sc.Watch or "0") == "1" then pcall(watch, math.max(2, tonumber(sc.WatchEvery or "") or 5)) end
     if (sc.On or "1") == "0" then return end
     local done = false
+    -- (a reload with the world up - Watch reloads Clan Life on every story file save - brings no new HUD: the check runs
+    -- on its own 15 s in; library exercise 2026-11-02, it ran only when a menu happened to close)
+    if WaCa.CurrentSlot() then
+        done = true
+        ExecuteInGameThreadWithDelay(15000, function()
+            local okRun, err = pcall(StoryCheck.Run)
+            if not okRun then log("story check: failed (%s)", tostring(err)) end
+        end)
+    end
     WaCa.On("ScreenShown", function(screen)
         if done then return end
         local ok, hud = pcall(function() return screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") ~= nil end)
