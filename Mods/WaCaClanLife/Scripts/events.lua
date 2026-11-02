@@ -104,6 +104,24 @@ local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumP
                       Gamepad_FaceButton_Bottom = 1, Gamepad_FaceButton_Right = 2, Gamepad_FaceButton_Left = 3,
                       Gamepad_FaceButton_Top = 4 }
 local pendingChoice
+-- (A RELOAD MID-CHOICE - VM 2026-11-02: the card stayed on screen for good and the keys did nothing; the scene it was
+-- in can't go on after a reload. The card's widget is kept in Saved/WaCaSceneChoice.ini while it is up; Clan Life
+-- starting again takes it away.)
+local function choicePath() return WaCa.SaveDir() .. "/../WaCaSceneChoice.ini" end
+local function keepChoice(var, widget)
+    pcall(WaCa.WriteIni, choicePath(), { Choice = { Var = var or "", Widget = widget or "", __order = { "Var", "Widget" } },
+        __order = { "Choice" } }, "; WaCa Clan Life - a Choice on screen (taken away if Clan Life reloads)")
+end
+local function recoverChoice()
+    local c = (WaCa.ReadIni(choicePath()) or {})["Choice"] or {}
+    if (c.Widget or "") == "" then return end
+    keepChoice(nil, nil)
+    local w = WaCa.Live(StaticFindObject(c.Widget))
+    if w then
+        pcall(function() w:RemoveFromParent() end)
+        log("events: a reload ended the Choice %s - its card taken away (the scene it was in is over)", tostring(c.Var))
+    end
+end
 local function askChoice(value, done)
     local var, rest = tostring(value):match("^%s*([%w%.%_]+)%s*=%s*(.-)%s*$")
     local parts = {}
@@ -124,6 +142,7 @@ local function askChoice(value, done)
     end)
     pendingChoice = { var = var, n = math.min(#parts, 5) - 1, widget = w and (w:GetFullName():gsub("^%S+ ", "")), done = done,
                       answers = parts }
+    keepChoice(var, pendingChoice.widget)
     log("events: Choice %s - %s (keys 1-%d)", var, parts[1], pendingChoice.n)
     -- (FITS THE SCREEN - four long answers ran off its foot, VM 2026-11-02: the card's text starts ~44% down and grows
     -- downward, ~ChoiceRoom HUD units free below it (of 2160). Its height is only known after a few drawn frames - the
@@ -153,6 +172,7 @@ local function answerChoice(key)
     local n = c and NUMBER_KEYS[tostring(key)]
     if not (n and n <= c.n) then return end
     pendingChoice = nil
+    keepChoice(nil, nil)
     local w = c.widget and StaticFindObject(c.widget)
     if w and w:IsValid() then pcall(function() w:RemoveFromParent() end) end
     log("events: Choice %s - answer %d (%s)", c.var, n, c.answers[n + 1])
@@ -610,7 +630,10 @@ local function recoverGathered()
     clearGathered()
     if n > 0 then log("events: %d cat(s) still gathered by a scene before a reload - back in their places", n) end
 end
-function Events.RecoverGathered() pcall(recoverGathered) end
+function Events.RecoverGathered() pcall(recoverGathered) pcall(recoverChoice) end
+-- (a fresh start - no world: the records are from a game that has ended; a widget / actor name in them could belong to
+-- something else in this one)
+function Events.ForgetRecords() pcall(clearGathered) pcall(keepChoice, nil, nil) end
 
 -- Groups: Tongues | Prey   the evening in camp (operator 2026-10-28): not one ring but small groups - sharing tongues in
 --                          circles of 2-3, sharing prey in 2s and 3s with now and then a 4 around a big piece. Who sits
@@ -2064,7 +2087,9 @@ function Events.Init(c)
     end)
     -- (other mods: play steps now - step lines as in clanevents.ini, joined by "|": "Groups: Prey|Wait: 3|Release")
     -- (a reload with the world up: cats a scene before had gathered go back)
-    ExecuteInGameThreadWithDelay(2500, function() if WaCa.CurrentSlot() then Events.RecoverGathered() end end)
+    ExecuteInGameThreadWithDelay(2500, function()
+        if WaCa.CurrentSlot() then Events.RecoverGathered() else Events.ForgetRecords() end
+    end)
     WaCa.On("KeyDown", function(_, key) if pendingChoice then pcall(answerChoice, key) end end)
     WaCa.On("StoryHookDone", function(name)
         local k = pendingHooks[tostring(name)]
