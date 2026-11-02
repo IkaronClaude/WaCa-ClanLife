@@ -40,7 +40,7 @@ local Events = {}
 
 local WaCa, log, modDir, DayNight
 local CARD = "/Game/Art/UXD/Blueprints/Popups/WBP_GuiPopupCenterMessage.WBP_GuiPopupCenterMessage_C"
-local cfg = { cardSeconds = 5, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260, gatherArc = 90, bigPreyChance = 25,
+local cfg = { cardSeconds = 5, choiceRoom = 1100, dialogueMax = 300, startWait = 15, gatherRadius = 6000, gatherRing = 260, gatherArc = 90, bigPreyChance = 25,
               groupRadius = 90, groupFirstRow = 340, groupRowGap = 280, groupSpread = 220,
               walkIn = true, walkFrom = 700, walkReach = 80, walkSeconds = 12, walkSpeed = 150 }
 local list = {}                  -- hour-scheduled scenes: { name, day, every, hour, steps, once }
@@ -125,6 +125,28 @@ local function askChoice(value, done)
     pendingChoice = { var = var, n = math.min(#parts, 5) - 1, widget = w and (w:GetFullName():gsub("^%S+ ", "")), done = done,
                       answers = parts }
     log("events: Choice %s - %s (keys 1-%d)", var, parts[1], pendingChoice.n)
+    -- (FITS THE SCREEN - four long answers ran off its foot, VM 2026-11-02: the card's text starts ~44% down and grows
+    -- downward, ~ChoiceRoom HUD units free below it (of 2160). Its height is only known after a few drawn frames - the
+    -- VM's measure lagged by seconds - so it is measured again every second while the choice is up, and the text
+    -- shrunk from its top edge, never below 50%.)
+    local mine = pendingChoice
+    local lastScale
+    local function fit()
+        if pendingChoice ~= mine then return end
+        local card = mine.widget and StaticFindObject(mine.widget)
+        local text = WaCa.Live(card) and WaCa.Live(card.mcGuiTextInfo)
+        if not text then return end
+        local h = text:GetDesiredSize().Y
+        local scale = h > cfg.choiceRoom and math.max(0.5, cfg.choiceRoom / h) or 1
+        if scale ~= lastScale then
+            text:SetRenderTransformPivot({ X = 0.5, Y = 0 })
+            text:SetRenderScale({ X = scale, Y = scale })
+            if scale < 1 then log("events: Choice %s - its text %.0f units high, shown at %.0f%%", var, h, scale * 100) end
+            lastScale = scale
+        end
+        ExecuteInGameThreadWithDelay(1000, function() pcall(fit) end)
+    end
+    pcall(fit)
 end
 local function answerChoice(key)
     local c = pendingChoice
@@ -2003,6 +2025,7 @@ function Events.Init(c)
     local ini = WaCa.ReadContent(modDir .. "/config/events.ini", "events") or {}
     local e = ini["Events"] or {}
     cfg.cardSeconds = tonumber(e.CardSeconds or "") or cfg.cardSeconds
+    cfg.choiceRoom = tonumber(e.ChoiceRoom or "") or cfg.choiceRoom
     cfg.walkIn = (e.WalkIn or "1") ~= "0"
     cfg.walkFrom = tonumber(e.WalkFrom or "") or cfg.walkFrom
     cfg.walkSeconds = tonumber(e.WalkSeconds or "") or cfg.walkSeconds
