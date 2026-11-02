@@ -50,6 +50,55 @@ local cfg = { on = false, repeatFactor = 0.35, repeatMemory = 2, maxRank = "Depu
               reportKey = "F", reportRadius = 500,
               thirdScenes = {}, assignScenes = {}, watchScene = {}, clanEvents = {} }
 local HINT = "/Game/Gameplay/Blueprints/WorldElements/POIHintArea/BP_POI_HintArea_Quest.BP_POI_HintArea_Quest_C"
+
+-- WHAT THE DUTIES SPAWN, KEPT (VM 2026-11-02: a reload of Clan Life left its markers - the patrol's points and noise
+-- areas, the meeting place's spot - standing, and the new copy added its own: 11 -> 12 spots; the story check's
+-- Watch = 1 reloads Clan Life on every story file save). Every marker spawned is listed in Saved/WaCaDutiesSpawned.ini;
+-- starting again with the world up (a reload) the ones listed and still there are removed first. A fresh game's start
+-- clears the list unread - object names come round again in a new session.
+local function spawnedPath() return WaCa.SaveDir() .. "/../WaCaDutiesSpawned.ini" end
+local spawnedList = {}
+local function track(actor)
+    pcall(function()
+        if not (actor and actor:IsValid()) then return end
+        spawnedList[#spawnedList + 1] = (actor:GetFullName():gsub("^%S+ ", ""))
+        local sec, order = {}, {}
+        for i, path in ipairs(spawnedList) do sec["a" .. i] = path order[#order + 1] = "a" .. i end
+        sec.__order = order
+        WaCa.WriteIni(spawnedPath(), { Spawned = sec, __order = { "Spawned" } }, "; WaCa Clan Life - markers the duties spawned")
+    end)
+    return actor
+end
+local function clearLeftovers(remove)
+    -- (the old list read now - before this copy spawns its own; removed a moment later ON THE GAME THREAD: destroyed
+    -- right away, during the mod's start, the game crashed - VM 2026-11-02)
+    local old = {}
+    if remove then
+        for k, path in pairs((WaCa.ReadIni(spawnedPath()) or {})["Spawned"] or {}) do
+            if k ~= "__order" then old[#old + 1] = path end
+        end
+    end
+    spawnedList = {}
+    pcall(WaCa.WriteIni, spawnedPath(), { Spawned = { __order = {} }, __order = { "Spawned" } }, "; WaCa Clan Life - markers the duties spawned")
+    if #old == 0 then return end
+    ExecuteInGameThreadWithDelay(1000, function()
+        local n = 0
+        for _, path in ipairs(old) do
+            local a = StaticFindObject(path)
+            if a and a:IsValid() then
+                -- (a meeting-place spot is one of the game's interactables - never destroyed in play either: switched
+                -- off; markers and areas go as they do when a task ends)
+                if a:GetClass():GetFName():ToString():find("CInematic") then
+                    pcall(function() a:SetActorEnableCollision(false) a:SetActorHiddenInGame(true) end)
+                else
+                    pcall(function() a:K2_DestroyActor() end)
+                end
+                n = n + 1
+            end
+        end
+        if n > 0 then log("duties: %d marker(s) left from before a reload - removed", n) end
+    end)
+end
 local lastPatrol, lastHunt = {}, nil   -- the last patrol's places / hunt spot (no repeat while there are others)
 local plan                        -- day scripts' override: { hunt = n, patrol = n, kinds = { Morning = "Hunt", ... } }
 local today                       -- { day, third = 1..3 / 4 = night, stage, task, record = { { third, kind, done } } }
@@ -188,7 +237,7 @@ local function patrolPoints(n)
             local area = g.AreaComponent
             local c, e = area:K2_GetComponentLocation(), area:GetScaledBoxExtent()
             local point = { X = c.X + (math.random() * 2 - 1) * e.X * 0.5, Y = c.Y + (math.random() * 2 - 1) * e.Y * 0.5, Z = c.Z }
-            local marker = class and p:GetWorld():SpawnActor(class, point, { pitch = 0, Yaw = 0, Roll = 0 })
+            local marker = class and track(p:GetWorld():SpawnActor(class, point, { pitch = 0, Yaw = 0, Roll = 0 }))
             if marker and marker:IsValid() then
                 pcall(function() marker.SenseTrackedComponent.bTrackingEnabled = true end)
                 pcall(function() marker:OnQuestTracked(true, nil) end)
@@ -284,7 +333,7 @@ local function gatherPoints(n)
         local point = found[i]
         point.d = nil
         pcall(function()
-            local marker = class and p:GetWorld():SpawnActor(class, point, { pitch = 0, Yaw = 0, Roll = 0 })
+            local marker = class and track(p:GetWorld():SpawnActor(class, point, { pitch = 0, Yaw = 0, Roll = 0 }))
             if marker and marker:IsValid() then
                 pcall(function() marker.SenseTrackedComponent.bTrackingEnabled = true end)
                 pcall(function() marker:OnQuestTracked(true, nil) end)
@@ -331,7 +380,7 @@ local function huntingGround()
     lastHunt = { X = pick[1].X, Y = pick[1].Y }
     local point = { X = pick[1].X, Y = pick[1].Y, Z = pick[1].Z, kind = pick[2] }
     pcall(function()
-        local marker = p:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 })
+        local marker = track(p:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 }))
         pcall(function() marker.SenseTrackedComponent.bTrackingEnabled = true end)
         pcall(function() marker:OnQuestTracked(true, nil) end)
         point.marker = (marker:GetFullName():gsub("^%S+ ", ""))
@@ -422,7 +471,7 @@ local function placeArea(at, extent, yaw, onChange)
     local path
     local ok, err = pcall(function()
         local p = pc().Pawn
-        local area = p:GetWorld():SpawnActor(areaClass, at, { pitch = 0, Yaw = yaw or 0, Roll = 0 })
+        local area = track(p:GetWorld():SpawnActor(areaClass, at, { pitch = 0, Yaw = yaw or 0, Roll = 0 }))
         area.MovementFlag = 0
         area.TriggerBox:SetCollisionProfileName(FName("OverlapAllDynamic"), true)
         area.TriggerBox:SetBoxExtent(extent, true)
@@ -762,7 +811,7 @@ local SPOT = "/Game/Gameplay/Blueprints/WorldElements/Interactables/BP_Interacta
 local function meetingSpot(point)
     local path
     pcall(function()
-        local a = pc().Pawn:GetWorld():SpawnActor(WaCa.LoadAsset(SPOT), point, { pitch = 0, Yaw = 0, Roll = 0 })
+        local a = track(pc().Pawn:GetWorld():SpawnActor(WaCa.LoadAsset(SPOT), point, { pitch = 0, Yaw = 0, Roll = 0 }))
         pcall(function() a.StaticMeshComponent:SetVisibility(false, false) end)
         path = pathOf(a)
     end)
@@ -871,7 +920,7 @@ end
 local function marker(point)
     local path
     pcall(function()
-        local m = pc().Pawn:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 })
+        local m = track(pc().Pawn:GetWorld():SpawnActor(WaCa.LoadAsset(HINT), point, { pitch = 0, Yaw = 0, Roll = 0 }))
         pcall(function() m.SenseTrackedComponent.bTrackingEnabled = true end)
         pcall(function() m:OnQuestTracked(true, nil) end)
         path = pathOf(m)
@@ -1895,6 +1944,8 @@ local function sidecar() return WaCa.SlotFile("WaCaDuties") end
 
 function Duties.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
+    -- (the world up already: a reload - the markers a copy before left are removed; else a fresh start: the list cleared)
+    pcall(function() clearLeftovers(WaCa.CurrentSlot() ~= nil and pc() ~= nil and pc().Pawn ~= nil) end)
     WaCa.On("TimeFrozen", function(frozen)
         if frozen or not pendingThird then return end
         local p = pendingThird
