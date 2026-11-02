@@ -116,7 +116,7 @@ Operators: `=  !=  <  <=  >  >=`. The right side can be a number, a word (`Seaso
 
 ```ini
 [Cutscene.LonerVisit]
-Place = Here                ; Here (in front of your cat), Pile, Zone:<code> ...
+Place = Here                ; Here (in front of your cat), Pile, Zone:<code>, a place of yours (places.ini) ...
 Shape = Facing              ; Facing (A vs B), Circle, Meeting, Pair, Ceremony ...
 A = Leader, Player
 B = S:loner
@@ -131,7 +131,26 @@ Beat8 = 23 End
 ```
 
 Every beat is `<seconds from the start> <Action>`. The full list of actions, cameras and shapes is in WaCa Cutscenes'
-README.
+README. Your pack can add its own spots and its own ways for the cats to stand:
+
+```ini
+; places.ini - stand there in game and press WaCa Cutscenes' WhereKey for the line
+[Place.ReedBank]
+At = -45300 4200 637
+Yaw = 60
+
+; shapes.ini - marks in cm from the place's middle (forward, side), one capital letter per group
+[Shape.Vigil]
+V1 = 0 -150
+V2 = 0 0
+V3 = 0 150
+W1 = -220 0
+FaceV = Forward
+FaceW = V
+```
+
+WaCa Cutscenes checks every cutscene when it loads: a place, shape, action or camera shot that doesn't exist - or a
+part spelt a letter off (`Leadr`: "did you mean Leader?") - is listed in UE4SS.log (`cutscene check:`).
 
 Cast slots take the same names as section 4. They also take `Rogue`, `Rogue:<Name>` and `Clan:<Clan>`: cats brought in
 for the scene and gone after it. A named rogue (`Rogue:Quill`) looks the same in every scene it is in.
@@ -195,6 +214,16 @@ It applies once, and only to a NEW cat (level 1, no rank quest done): a cat some
 changes when they install your pack. A patrol's own companions fight beside the cat while the patrol lasts, then the
 start's party again. Not possible yet: a start rank (the game counts its rank quests).
 
+## 8c. Your own cats and specialisations
+
+- **A cat of your own** (`roster.ini`, needs WaCa Looks): change a cat of the save - by the name it has now
+  (`[Cat.Troutwing]`) or by its story role (`[Narrative.TheMistrustfulLeader]`, whoever plays it in that save):
+  `Name = Mossfeather` renames it, look keys (`Fur = #7B8A5A`, `ScarEarId = 6` - only values the game's own cats use)
+  dress it. Every key is in WaCa Looks' `rosters/Example.ini`. Your scenes and `[Cast]` then use its new name.
+- **A specialisation for the player's cat** (`roles.ini`, needs WaCa Hunting): `[Role.Herbalist]` with `Hunt`, `Fish`,
+  `Combat`, `Guard` multipliers (1 = no change). A scene gives it to the cat for that save:
+  `Emit: SetSpecialisation = Herbalist`.
+
 ## 9. Several packs together
 
 Every pack adds to the same files without editing them:
@@ -217,7 +246,12 @@ listed in `UE4SS.log` (`story check:`) and in `Saved/WaCaStoryCheck.txt`, with a
 - a cutscene nobody defines;
 - `S:<role>` with no cat in `[Cast]`;
 - a condition it can't read (`Pile >< 3`);
-- a variable nothing ever sets, which is usually a typo (`SawLonr`).
+- a variable nothing ever sets, which is usually a typo (`SawLonr`);
+- a `[Dialogue.*]` `Who` the game has no lines for (a cat's name instead of a role) - with the roles it has;
+- a murmur's `Who = S:<role>` with no cat in `[Cast]`;
+- story days your pack writes while story days are off (a warning).
+
+WaCa Cutscenes checks your cutscenes the same way (section 6).
 
 Read it after every change; "No problems found." means the files read cleanly.
 
