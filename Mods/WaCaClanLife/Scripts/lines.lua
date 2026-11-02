@@ -45,6 +45,14 @@ local function fillerKeys()
     return filler
 end
 
+-- the roles the game has filler lines for (RiverClanQueen ...) - what [Dialogue.*] Who / [Lines.<Role>] can name; the
+-- story check reads it
+function Lines.FillerRoles()
+    local out = {}
+    for _, f in ipairs(fillerKeys()) do out[f.role] = true end
+    return out
+end
+
 local today, inDays
 
 -- this hour's lines for a role: its own pools + All's - the ones for today (Days / Require) - for the period, plus
@@ -134,6 +142,19 @@ local function story()
         end
     end
     if n > 0 then log("lines: day %d - %d roles have their story line for today", day, n) end
+    -- (and why each story dialogue that isn't said today isn't - a writer sees it in the log)
+    local roles = Lines.FillerRoles()
+    for _, e in ipairs(cfg.dialogue) do
+        if not fixed[e.who] then
+            local c = cases[e.who]
+            local why = not roles[e.who] and "the game has no filler lines for that role"
+                or not inDays(e.days, day) and ("not one of its days (" .. tostring(e.days) .. ")")
+                or (Events and not Events.Check(e.require)) and ("its Require doesn't hold (" .. tostring(e.require) .. ")")
+                or e.case ~= (c and c.case or "Talk") and ("its Case is " .. e.case .. ", the cat's is " .. (c and c.case or "Talk"))
+                or "another entry for that role came first"
+            log("lines: day %d - [Dialogue.%s] (%s) not said today: %s", day, e.name, e.who, why)
+        end
+    end
 end
 
 function Lines.SetCase(role, case, leader)
@@ -149,7 +170,7 @@ local function roll(hour)
     local p = period(hour or 12)
     local swapped = 0
     for _, f in ipairs(fillerKeys()) do
-        local pool = (not fixed[f.role]) and poolFor(f.role, p) or {}
+        local pool = (cfg.on and not fixed[f.role]) and poolFor(f.role, p) or {}
         if #pool > 0 then
             original[f.key] = original[f.key] or WaCa.GetText(f.key)
             local text = (math.random() < cfg.share) and pool[math.random(#pool)] or original[f.key]
@@ -202,8 +223,10 @@ function Lines.Init(c)
             table.insert(cfg.pools[role], pool)
         end
     end
-    log("lines: %s (%d extra lines, %d story dialogues)", cfg.on and "on" or "off", n, #cfg.dialogue)
-    if not cfg.on or (n == 0 and #cfg.dialogue == 0) then return end
+    -- (On switches the extra chatter - the random pools; a story's [Dialogue.*] is the story's own and always plays:
+    -- library exercise 2026-11-02, a pack's dialogue said nothing because the chatter was off)
+    log("lines: extra chatter %s (%d extra lines), %d story dialogues", cfg.on and "on" or "off", n, #cfg.dialogue)
+    if not (cfg.on and n > 0) and #cfg.dialogue == 0 then return end
     WaCa.On("HourChanged", function(hour) roll(hour) end)
     WaCa.On("DayStarted", function() story() roll(DayNight.Hour()) end)
     local rolled = false

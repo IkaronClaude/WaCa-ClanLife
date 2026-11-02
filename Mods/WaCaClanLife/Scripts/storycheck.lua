@@ -110,6 +110,32 @@ function StoryCheck.Run()
             end
         end
     end
+    -- (lines.ini: whom the dialogue is for - a role the game has no filler lines for does nothing, silently; a murmur's
+    -- S:<role> needs a cat in [Cast] - library exercise 2026-11-02)
+    local okL, Lines = pcall(require, "lines")
+    local roles = okL and Lines.FillerRoles and Lines.FillerRoles() or {}
+    local anyRole = next(roles) ~= nil
+    local roleList
+    for section, t in pairs(loaded.lines or {}) do
+        if type(t) == "table" and section ~= "__order" then
+            local who = section:match("^Dialogue%.") and t.Who or section:match("^Lines%.([^.]+)")
+            if who and who ~= "" and who ~= "All" and anyRole and not roles[who] then
+                if not roleList then
+                    roleList = {}
+                    for r in pairs(roles) do roleList[#roleList + 1] = r end
+                    table.sort(roleList)
+                end
+                problem("lines", section, section:match("^Dialogue%.") and "Who" or "(its name)",
+                    "the game has no filler lines for '" .. who .. "' - it would say nothing (a role, not a cat's name; known: "
+                    .. table.concat(roleList, ", ") .. ")")
+            end
+            local mw = section:match("^Murmur%.") and t.Who
+            local role = mw and mw:match("^(S:[%w_]+)$")
+            if role and not cast[role] then
+                problem("lines", section, "Who", "the role " .. role .. " has no cat - give it one in [Cast]")
+            end
+        end
+    end
     -- (pass 2: the conditions - readable, and every variable they test set somewhere)
     for _, e in ipairs(tested) do
         local names, bad = condVars(e[4])

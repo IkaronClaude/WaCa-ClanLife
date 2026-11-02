@@ -156,7 +156,10 @@ Line2 = {LEADER} was kind to let him rest - kinder than I'd have been.
   `{PLAYER}`, `{LEADER}`, `{DEPUTY}` and `{NAME}` are filled in. Each cat says a different line every day, and
   nothing repeats until all of them have been said.
 - **Dialogue by days**: `[Dialogue.<Name>] Who / Days / Require / Line1..` gives the game's filler lines for given cats
-  on given days.
+  on given days. `Who` is a role the game has filler lines for (`RiverClanQueen`, `ThunderClanWarrior` ...), not a
+  cat's name - the story check lists them if you name one it doesn't know. Story dialogue always plays, even with Clan
+  Life's extra chatter (`[Lines] On`) off; the log says why an entry isn't said today (`not said today: its Require
+  doesn't hold ...`).
 
 ## 8b. Where a new cat starts (`start.ini`)
 
