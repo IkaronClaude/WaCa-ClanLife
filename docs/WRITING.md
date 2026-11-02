@@ -192,6 +192,10 @@ each third; the day's duties, season and weather stay the main story's. Where ev
 same `Sync` is on its own day for it and ready, then they all go on together. There is no limit to the wait - one story
 repeating its day while another catches up is the normal case. The log says who waits for whom
 (`days: the main story waits at the sync point Apprentice (its day 2) for The herbalist's lessons (day 3, ...)`).
+`Owns = Morning` (any thirds, comma-separated) with `MorningDuty = <duty>` lets your story's day take that third's
+task from the main story - your own duty from `duties.ini` too. When two packs own the same third, the one with the
+lower Priority wins and the log names the conflict.
+
 Not built yet: holding the game's own quests at a sync point.
 
 The example pack's `story.ini` is a three-day story whose second day waits for the loner question to be answered.

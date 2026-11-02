@@ -17,6 +17,7 @@
 --   SYNC POINTS: a day with Sync = <Name> is a barrier - the story repeats that day until EVERY story that declares a
 --   day with that Sync is on it and ready (its Advance met); then they cross together. No repeat limit: a long wait is
 --   the normal case. (Against the game's own quests the barrier can't hold - not built yet.)
+--   Owns = Morning[, Noon, Evening, Night] + <Third>Duty = <duty>: the pack's day takes that third's task.
 local Days = {}
 
 local WaCa, log, DayNight, Weather, Duties, Events
@@ -108,6 +109,24 @@ local function setUp(why)
         if c then
             chances = chances or {}
             chances[slot] = c
+        end
+    end
+    -- (a pack's story day can take a third's task: Owns = Morning[, Night] + MorningDuty = <duty> - the main story's
+    -- task for that third gives way; two packs claiming one third = the first by Priority, the other reported)
+    local owner = {}
+    for _, pk in ipairs(packs) do
+        for slot in tostring(getIn(pk.days, pk.day, "Owns") or ""):gmatch("[%a]+") do
+            local k = getIn(pk.days, pk.day, slot .. "Duty")
+            if not k then
+                log("days: %s day %d owns the %s but sets no %sDuty - nothing taken", pk.name, pk.day, slot, slot)
+            elseif owner[slot] then
+                log("days: CONFLICT - %s and %s both own the %s today; %s's %s plays", owner[slot], pk.name, slot,
+                    owner[slot], kinds[slot])
+            else
+                kinds = kinds or {}
+                owner[slot], kinds[slot] = pk.name, k
+                log("days: %s owns the %s today - %s", pk.name, slot, k)
+            end
         end
     end
     if Duties then Duties.Plan(hunt, patrol, kinds, chances, get(story, "Events"), get(story, "NoEvents")) end
