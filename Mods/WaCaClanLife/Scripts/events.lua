@@ -99,7 +99,10 @@ end
 -- question and its numbered answers on the game's centre card until one is picked with the number keys 1-4; the
 -- variable gets the number (kept with the save like any story variable), the scene goes on (If: Shelter = 1 ...).
 -- Keys only for now (the look of a choice is the operator's call - a menu of the game's own would be the next step).
-local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumPadTwo = 2, NumPadThree = 3, NumPadFour = 4 }
+local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumPadTwo = 2, NumPadThree = 3, NumPadFour = 4,
+                      -- (a gamepad's face buttons: bottom 1, right 2, left 3, top 4 - untested, the VM has no gamepad)
+                      Gamepad_FaceButton_Bottom = 1, Gamepad_FaceButton_Right = 2, Gamepad_FaceButton_Left = 3,
+                      Gamepad_FaceButton_Top = 4 }
 local pendingChoice
 local function askChoice(value, done)
     local var, rest = tostring(value):match("^%s*([%w%.%_]+)%s*=%s*(.-)%s*$")
