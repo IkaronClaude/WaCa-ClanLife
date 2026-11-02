@@ -94,6 +94,47 @@ local function nextCard()
     end)
 end
 
+-- A CHOICE (library exercise 2026-11-02: a story couldn't ask the player anything - every branch was chance or a
+-- variable set elsewhere): Choice: <variable> = <question>; <answer 1>; <answer 2> [; <answer 3>; <answer 4>] - the
+-- question and its numbered answers on the game's centre card until one is picked with the number keys 1-4; the
+-- variable gets the number (kept with the save like any story variable), the scene goes on (If: Shelter = 1 ...).
+-- Keys only for now (the look of a choice is the operator's call - a menu of the game's own would be the next step).
+local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumPadTwo = 2, NumPadThree = 3, NumPadFour = 4 }
+local pendingChoice
+local function askChoice(value, done)
+    local var, rest = tostring(value):match("^%s*([%w%.%_]+)%s*=%s*(.-)%s*$")
+    local parts = {}
+    -- (; between them - as a duty's points: | already parts a PlayScene's steps)
+    for p in tostring(rest or ""):gmatch("[^;]+") do parts[#parts + 1] = p:match("^%s*(.-)%s*$") end
+    if not var or #parts < 3 then
+        log("events: Choice needs <variable> = <question>; <answer>; <answer> - got '%s'", tostring(value))
+        return done()
+    end
+    local lines = { parts[1] }
+    for i = 2, math.min(#parts, 5) do lines[#lines + 1] = string.format("%d - %s", i - 1, parts[i]) end
+    local w
+    pcall(function()
+        local controller = pc()
+        w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, WaCa.LoadAsset(CARD), controller)
+        w:AddToViewport(60)
+        w.mcGuiTextInfo:SetText(FText(table.concat(lines, "\n")))
+    end)
+    pendingChoice = { var = var, n = math.min(#parts, 5) - 1, widget = w and (w:GetFullName():gsub("^%S+ ", "")), done = done,
+                      answers = parts }
+    log("events: Choice %s - %s (keys 1-%d)", var, parts[1], pendingChoice.n)
+end
+local function answerChoice(key)
+    local c = pendingChoice
+    local n = c and NUMBER_KEYS[tostring(key)]
+    if not (n and n <= c.n) then return end
+    pendingChoice = nil
+    local w = c.widget and StaticFindObject(c.widget)
+    if w and w:IsValid() then pcall(function() w:RemoveFromParent() end) end
+    log("events: Choice %s - answer %d (%s)", c.var, n, c.answers[n + 1])
+    Events.SetVar(c.var, n)
+    c.done()
+end
+
 function Events.Card(text, seconds, onGone)
     table.insert(cards.queue, { text = text, seconds = seconds or cfg.cardSeconds, onGone = onGone })
     if not cards.showing then nextCard() end
@@ -1602,7 +1643,7 @@ local function dialogueOver(why)
     w.done()
 end
 
-local function runStep(s, ctx, nextStep, stop)
+local function runStep(s, ctx, nextStep, stop, jump)
     local k = s.kind
     if k == "Set" then
         local name, value = tostring(s.value):match("^%s*([%w%.%_]+)%s*=%s*(.-)%s*$")
@@ -1619,7 +1660,13 @@ local function runStep(s, ctx, nextStep, stop)
         if name then Events.SetVar(name, (tonumber(Events.Var(name)) or 0) + tonumber(n)) end
         nextStep()
     elseif k == "If" then
-        if Events.Check(s.value) then nextStep() else stop() end
+        -- (IF / ELSE / ENDIF - library exercise 2026-11-02, a Choice had two answers but a scene only one way on: a
+        -- false If goes on after the next Else (or EndIf); with neither the scene ends, as it always did. Not nested.)
+        if Events.Check(s.value) then nextStep() else jump({ Else = true, EndIf = true }) end
+    elseif k == "Else" then
+        jump({ EndIf = true })                        -- (the If's own branch is done: past its EndIf)
+    elseif k == "EndIf" then
+        nextStep()
     elseif k == "Card" then
         showCard(fill(s.value, ctx), cfg.cardSeconds, nextStep)
     elseif k == "Gather" then
@@ -1638,6 +1685,8 @@ local function runStep(s, ctx, nextStep, stop)
     elseif k == "Pose" then
         Events.Pose(s.value, s.who, ctx)
         nextStep()
+    elseif k == "Choice" then
+        askChoice(s.value, nextStep)
     elseif k == "Freeze" then
         -- (a story point - tickets.md "Time freezes at story points": Freeze: On ... Freeze: Off - the clan's clock
         -- stands still and its next third waits; questing at a story point is never under time pressure)
@@ -1865,14 +1914,27 @@ function Events.Run(steps, onDone, ctx)
         finished = true
         if onDone then onDone() end
     end
-    local function nextStep()
+    local nextStep
+    -- (on after the next step of one of these kinds - none: the scene ends)
+    local function jump(kinds)
+        for j = i + 1, #(steps or {}) do
+            local st = steps[j]
+            if type(st) == "string" then st = Events.Parse(st) end
+            if st and kinds[st.kind] then
+                i = j
+                return nextStep()
+            end
+        end
+        stop()
+    end
+    nextStep = function()
         if finished then return end
         i = i + 1
         local s = steps and steps[i]
         if not s then return stop() end
         if type(s) == "string" then s = Events.Parse(s) end
         if not s then return nextStep() end
-        local ok, err = pcall(runStep, s, ctx, nextStep, stop)
+        local ok, err = pcall(runStep, s, ctx, nextStep, stop, jump)
         if not ok then
             log("events: step %d failed (%s)", i, tostring(err))
             nextStep()
@@ -1977,6 +2039,7 @@ function Events.Init(c)
     -- (other mods: play steps now - step lines as in clanevents.ini, joined by "|": "Groups: Prey|Wait: 3|Release")
     -- (a reload with the world up: cats a scene before had gathered go back)
     ExecuteInGameThreadWithDelay(2500, function() if WaCa.CurrentSlot() then Events.RecoverGathered() end end)
+    WaCa.On("KeyDown", function(_, key) if pendingChoice then pcall(answerChoice, key) end end)
     WaCa.On("StoryHookDone", function(name)
         local k = pendingHooks[tostring(name)]
         pendingHooks[tostring(name)] = nil

@@ -68,7 +68,8 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Party: <story cats>` | who fights beside your cat from now on (`Party: Toadfrost, E:RiverClanDeputy`; `Party: none` = the game's own) - kept with the save |
 | `Set: <var> = <value>` | sets a story variable (section 5) - `Set: X = Day + 2` works too |
 | `Add: <var> <n>` | adds to one (`Add: LeaderFavour 2`) |
-| `If: <conditions>` | the rest of the scene only if they hold |
+| `If: <conditions>` | the rest of the scene only if they hold - or, with `Else` / `EndIf` steps after it, the steps up to `Else` (or `EndIf`) only; `Else` ... `EndIf` when they don't (not nested) |
+| `Choice: <variable> = <question>; <answer 1>; <answer 2> ...` | the player picks an answer (number keys 1-4, up to four answers); the variable gets its number - then `If: <variable> = 1` ... |
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
 | `Pose: <pose> @ <who>` | a cat plays a pose (Sit, Growl, Hiss, Sniff ...) |
 | `Emit: <event>` | sends an event other mods (or your own `When = Event:`) hear; `Emit: <event> = <value>` sends a value with it (`Emit: SetSpecialisation = Herbalist` - WaCa Hunting gives your cat that role for this save) |

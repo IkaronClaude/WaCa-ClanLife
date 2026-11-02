@@ -11,7 +11,7 @@ local WaCa, log, Events
 local modDir
 
 -- the scene runner's step kinds (events.lua's Run)
-local KINDS = { Add = true, Bond = true, Card = true, Cutscene = true, Dialogue = true, Emit = true, Fade = true,
+local KINDS = { Add = true, Bond = true, Card = true, Choice = true, Cutscene = true, Else = true, EndIf = true, Dialogue = true, Emit = true, Fade = true,
                 FadeIn = true, Freeze = true, Gather = true, Groups = true, Hook = true, If = true, Lead = true, Pair = true,
                 Part = true, Party = true, Pose = true, Release = true, Set = true, Wait = true }
 -- (which keys of which files are scene steps / conditions)
@@ -91,7 +91,7 @@ function StoryCheck.Run()
                             if step.kind == "Cutscene" and cutscenes and not known[step.value] then
                                 problem(file, section, key, "no cutscene '" .. step.value .. "' (WaCa Cutscenes knows: " .. table.concat(cutscenes, ", ") .. ")")
                             end
-                            if (step.kind == "Set" or step.kind == "Add") then
+                            if (step.kind == "Set" or step.kind == "Add" or step.kind == "Choice") then
                                 local name = step.value:match("^%s*([%w%.%_]+)")
                                 if name then set[name] = true end
                             end
