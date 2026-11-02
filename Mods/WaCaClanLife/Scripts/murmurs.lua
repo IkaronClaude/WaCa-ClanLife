@@ -119,7 +119,7 @@ function Murmurs.Init(c)
     WaCa.On("CatStep", function(_, mesh)
         local me = pawn()
         if not (me and mesh) then return end
-        local ok, mineStep = pcall(function() return mesh:GetOwner():GetAddress() == me:GetAddress() end)
+        local ok, mineStep = pcall(function() return (WaCa.Live(mesh:GetOwner()) or error("no owner")):GetAddress() == me:GetAddress() end)
         if not (ok and mineStep) then return end
         steps = steps + 1
         if steps % 3 ~= 0 then return end

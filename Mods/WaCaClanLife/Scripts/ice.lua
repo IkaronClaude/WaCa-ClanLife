@@ -203,7 +203,7 @@ local function onStep(_, mesh)
     if not isFrozen or cfg.thin <= 0 then return end
     local pawn, on = playerOn()
     if not (pawn and mesh and mesh:IsValid()) then return end
-    local ok, mine = pcall(function() return mesh:GetOwner():GetAddress() == pawn:GetAddress() end)
+    local ok, mine = pcall(function() return (WaCa.Live(mesh:GetOwner()) or error("no owner")):GetAddress() == pawn:GetAddress() end)
     if not (ok and mine) then return end
     if not on or cracked[on] or not picked(on .. "#thin", cfg.thin) then
         onThin.path, onThin.steps = nil, 0
@@ -219,7 +219,7 @@ local function onStep(_, mesh)
     cracked[on] = true
     onThin.path, onThin.steps = nil, 0
     local where = on
-    pcall(function() where = c:GetOwner():GetFName():ToString() end)
+    pcall(function() where = (WaCa.Live(c:GetOwner()) or error("no owner")):GetFName():ToString() end)
     log("ice: the thin ice gives way under your cat - %s", where)
     WaCa.Emit("ShowLine", cfg.crackLine, 4)
     WaCa.Emit("FellThroughIce", on)

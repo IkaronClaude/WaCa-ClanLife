@@ -1318,7 +1318,8 @@ local function dutyPoint(spec)
     end
     if spec == "Pile" then
         local c = pileComponent()
-        local q = c and c:GetOwner():K2_GetActorLocation()
+        local owner = c and WaCa.Live(c:GetOwner())
+        local q = owner and owner:K2_GetActorLocation()
         return q and { X = q.X, Y = q.Y, Z = q.Z } or nil
     end
     local zone = spec:match("^Zone:%s*(.+)$")
@@ -2346,7 +2347,7 @@ function Duties.Init(c)
     -- landing on the same side of a teleport, VM 2026-10-28)
     local me
     WaCa.On("CatStep", function(_, mesh)
-        local ok, owner = pcall(function() return mesh:GetOwner():GetAddress() end)
+        local ok, owner = pcall(function() return (WaCa.Live(mesh:GetOwner()) or error("no owner")):GetAddress() end)
         if not ok then return end
         if owner ~= me then
             local pawn = pc() and pc().Pawn
