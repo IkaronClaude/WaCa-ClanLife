@@ -179,6 +179,21 @@ function Events.Cast(only)
                 for _, c in ipairs(cats) do
                     if c.name:lower() == spec:lower() then cat = c.actor break end
                 end
+                -- (a cat that isn't drawn just now - far from your cat - is still in the world: WaCa Cats lists only
+                -- the drawn ones, and the pack's herbalist went uncast for 2+ minutes after a load and missed a
+                -- cutscene, VM 2026-11-02; the scenes bring an undrawn cat in themselves, as they do the Leader)
+                if not cat then
+                    for _, cls in ipairs({ "SwtAdventureQuestActor", "SwtAdventureWalkingNPC" }) do
+                        for _, a in ipairs(FindAllOf(cls) or {}) do
+                            pcall(function()
+                                if not cat and a:IsValid() and (WaCa.CatName(a) or ""):lower() == spec:lower()
+                                    and not a:GetClass():GetFName():ToString():find("Filler") then
+                                    cat = a
+                                end
+                            end)
+                        end
+                    end
+                end
             end
             if cat and cat:IsValid() then
                 local path = (cat:GetFullName():gsub("^%S+ ", ""))
