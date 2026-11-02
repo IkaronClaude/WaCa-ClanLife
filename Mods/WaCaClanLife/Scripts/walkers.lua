@@ -310,6 +310,7 @@ local function sendHome(path, m)
         crumb("SetLocRot home", path)
         pcall(function() a:K2_SetActorLocationAndRotation(m.home, m.homeRot, false, {}, true) end)
         playWalk(a, false)
+        if m.shown then draw(a, false) end
     end
     movers[path] = nil
 end
@@ -1029,6 +1030,7 @@ local function tick()
                     if m.leg > #m.legs then
                         crumb("SetRot home", path)
                         pcall(function() a:K2_SetActorRotation(m.homeRot, true) end)
+                        if m.shown and not m.staged then draw(a, false) m.shown = nil end
                         log("walkers: %s is home again", m.name)
                     else
                         local z = a:K2_GetActorLocation().Z
@@ -1261,14 +1263,31 @@ end
 
 -- THE EVENING'S SCENES (events.lua Groups): a named cat walked to a seat and held there, facing its group; let go, it
 -- walks home
+-- A CAT THE GAME ISN'T DRAWING (far from your cat when the scene began; WaCa Cutscenes hides one it brought in again at
+-- its end): shown while it is staged / leads, hidden again once it is home (library exercise 2026-11-02: after the
+-- HerbCouncil cutscene the pack's herbalist led your cat to the medicine den INVISIBLE - "waits for you" for minutes)
+local function drawn(a)
+    local ok, v = pcall(function() return a.SkeletalMeshComponent:IsVisible() end)
+    return not ok or v
+end
+local function draw(a, on)
+    pcall(function() a.SkeletalMeshComponent:SetVisibility(on, true) end)
+end
+
 function Walkers.Stage(a, spot, faceYaw, speed)
     local path = pathOf(a)
     local m = movers[path]
+    local shown = m and m.shown
+    if not drawn(a) then
+        draw(a, true)
+        shown = true
+        log("walkers: %s wasn't drawn - shown while it is in the scene", nameOf(a) or "?")
+    end
     local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
     movers[path] = { home = m and m.home or { X = q.X, Y = q.Y, Z = q.Z },
                      homeRot = m and m.homeRot or { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll },
                      legs = { { X = spot.X, Y = spot.Y, Z = spot.Z } }, leg = 1, state = "walk", staged = true, speed = speed,
-                     faceYaw = faceYaw, name = nameOf(a) or "?" }
+                     faceYaw = faceYaw, name = nameOf(a) or "?", shown = shown }
     playWalk(a, true)
     log("walkers: %s walks to its seat (%.1f m)", movers[path].name,
         math.sqrt((spot.X - q.X) ^ 2 + (spot.Y - q.Y) ^ 2) / 100)
