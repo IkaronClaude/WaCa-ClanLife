@@ -140,6 +140,12 @@ numbered as you need: `Morning2`, `Morning3` ...). It can also set the day's dut
 `Advance` says when the story moves on. Until it holds, the story day repeats. `Like = M` copies a day you already
 wrote. The full key list is at the top of Clan Life's `config/days.ini`.
 
+A pack can add to a day Clan Life (or another pack) already writes: numbered beats (`EveningAfter1`) go after its own,
+`Events = HerbCouncil` makes your clan event happen that day. Story days are off unless the player turns them on
+(Clan Life's `config/days.ini` `[Days] On = 1`) - the story check warns when your pack writes days while they're off.
+When a day begins, the log lists everything it holds (`days: story day 2 holds: events HerbCouncil; Morning; ...
+EveningAfter1`). A mod can move the story with `WaCa.Emit("SetStoryDay", n)`.
+
 ## 8. Dialogue (`lines.ini`)
 
 - **Murmurs**: what the clan says as your cat walks past. A set of lines, said when its conditions hold:

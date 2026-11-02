@@ -136,6 +136,22 @@ function StoryCheck.Run()
             end
         end
     end
+    -- (story days written while story days are off - [Days] On = 0, the default - never play; a pack's writer
+    -- wouldn't know: library exercise 2026-11-02)
+    local okD, Days = pcall(require, "days")
+    if okD and Days.IsOn and not Days.IsOn() then
+        -- (a pack's own days only - Clan Life's examples are off with the rest)
+        local modsDir = modDir:match("^(.*)[/\\][^/\\]+$")
+        for _, mod in ipairs(modsDir and WaCa.EnabledMods(modsDir) or {}) do
+            local ini = WaCa.ReadIni(modsDir .. "/" .. mod .. "/content/days.ini") or {}
+            local nDays = 0
+            for section in pairs(ini) do if tostring(section):match("^Day%.%d+$") then nDays = nDays + 1 end end
+            if nDays > 0 then
+                warning("days", "Days", "On", mod .. " writes " .. nDays .. " story day(s), but story days are off - they "
+                    .. "won't play (Clan Life's config/days.ini [Days] On = 1, with the day / night cycle on)")
+            end
+        end
+    end
     -- (pass 2: the conditions - readable, and every variable they test set somewhere)
     for _, e in ipairs(tested) do
         local names, bad = condVars(e[4])

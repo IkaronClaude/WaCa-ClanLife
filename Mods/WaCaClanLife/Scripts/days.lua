@@ -91,6 +91,22 @@ local function setUp(why)
     log("days: story day %d (%s) - duties hunt %s / patrol %s, season %s, weather %s, advance on %s", story, why,
         tostring(hunt or "by needs"), tostring(patrol or "by needs"), tostring(get(story, "Season") or "by days"),
         tostring(get(story, "Weather") or "the season's"), tostring(get(story, "Advance") or "Always"))
+    -- (what the day holds - its events and its beats per phase, every file's (a pack's added ones too): a writer sees
+    -- the day as it will play; library exercise 2026-11-02)
+    local parts = {}
+    if get(story, "Events") then parts[#parts + 1] = "events " .. get(story, "Events") end
+    if get(story, "NoEvents") then parts[#parts + 1] = "no events " .. get(story, "NoEvents") end
+    for _, ph in ipairs({ "Morning", "Noon", "Evening", "Night" }) do
+        for _, kind in ipairs({ "Start", "", "After" }) do
+            local steps = scenesOf(story, ph .. kind)
+            if #steps > 0 then
+                local keys = {}
+                for _, st in ipairs(steps) do keys[#keys + 1] = st.key .. (seen[st.key] and " (seen)" or "") end
+                parts[#parts + 1] = table.concat(keys, ", ")
+            end
+        end
+    end
+    log("days: story day %d holds: %s", story, #parts > 0 and table.concat(parts, "; ") or "no beats or events")
 end
 
 local function rankValue(name)
@@ -128,6 +144,7 @@ function Days.SetStory(n, why)
 end
 -- a key of the current story day (Like chains followed) - other features' story overrides (gatherings.ini ...)
 function Days.Get(key) return cfg.on and get(story, key) or nil end
+function Days.IsOn() return cfg.on end
 
 local function sidecar() return WaCa.SlotFile("WaCaDays") end
 
@@ -152,6 +169,10 @@ function Days.Init(c)
         setUp("the session starts")
     end)
     WaCa.On("DutiesJudged", function(_, done, missed) lastJudged = { done = done, missed = missed } end)
+    -- (other mods - a story mod, a test - move the story: WaCa.Emit("SetStoryDay", n); kept with the save as any day)
+    WaCa.On("SetStoryDay", function(n)
+        if tonumber(n) then Days.SetStory(math.floor(tonumber(n)), "asked for (SetStoryDay)") end
+    end)
     -- (registered before duties / weather react to the same DayStarted - main.lua inits days first)
     WaCa.On("DayStarted", function()
         if advances() then
