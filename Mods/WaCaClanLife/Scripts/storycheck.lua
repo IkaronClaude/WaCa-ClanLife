@@ -152,6 +152,48 @@ function StoryCheck.Run()
             end
         end
     end
+    -- (a pack's own duties, [Duty.*] in duties.ini: each point a place that can be found, the chance's thirds, the
+    -- turn-in - library exercise 2026-11-02: a misspelt den only showed in play, as 'free time instead')
+    local dens
+    pcall(function()
+        dens = {}
+        for _, d in ipairs(FindAllOf("WrcHousingDoorActor") or {}) do
+            pcall(function() local n = d.ActorTitle:ToString() if not d.bIsExit and n ~= "" then dens[n:lower()] = true end end)
+        end
+        if not next(dens) then dens = nil end
+    end)
+    local THIRDS = { Morning = true, Noon = true, Afternoon = true, Evening = true, Night = true }
+    local TURNINS = { Pile = true, Partner = true, None = true, Camp = true, Leader = true, Deputy = true,
+                      MedicineCat = true, Elder = true, Queen = true, Warrior = true, Mentor = true }
+    for section, t in pairs(loaded.duties or {}) do
+        local name = type(t) == "table" and tostring(section):match("^Duty%.(.+)$")
+        if name then
+            if (t.Points or "") == "" then problem("duties", section, "Points", "no points - the duty has nowhere to go") end
+            local i = 0
+            for spec in tostring(t.Points or ""):gmatch("[^;]+") do
+                i = i + 1
+                spec = spec:match("^%s*(.-)%s*$")
+                local den = spec:match("^Den:%s*(.+)$")
+                local role = spec:match("^(S:[%w_]+)$")
+                if den and dens and not dens[den:lower()] then
+                    local known = {}
+                    for d in pairs(dens) do known[#known + 1] = d end
+                    table.sort(known)
+                    problem("duties", section, "Points", "point " .. i .. ": no den '" .. den .. "' in this world (dens: " .. table.concat(known, ", ") .. ")")
+                elseif role and not cast[role] then
+                    problem("duties", section, "Points", "point " .. i .. ": the role " .. role .. " has no cat - give it one in [Cast]")
+                end
+            end
+            for third in tostring(t.Chance or ""):gmatch("(%a+)%s*:") do
+                if not THIRDS[third] then problem("duties", section, "Chance", "no third '" .. third .. "' (Morning, Noon, Evening, Night)") end
+            end
+            if (t.Chance or "") == "" then warning("duties", section, "Chance", "no Chance - the duty is only ever given when a story day or a test asks for it") end
+            local ti = (loaded.duties["Task." .. name] or {}).TurnIn
+            if ti and ti ~= "" and not TURNINS[ti] and not ti:match("^S:") then
+                problem("duties", "Task." .. name, "TurnIn", "can't turn in to '" .. ti .. "' (Pile, Partner, None, or a role: Leader, Deputy, MedicineCat ...)")
+            end
+        end
+    end
     -- (pass 2: the conditions - readable, and every variable they test set somewhere)
     for _, e in ipairs(tested) do
         local names, bad = condVars(e[4])

@@ -1477,11 +1477,16 @@ end
 -- WaCa.On("StoryHook", function(name) ... end); when its part is over it says so: WaCa.Emit("StoryHookDone", name).
 -- The scene waits for that (at most [Events] HookWait s - 60), then goes on.
 local pendingHooks = {}           -- name -> its continuation
+local hookSaid = {}               -- hook names already logged as unhandled
 local hookWait = 60
 local function crossHook(name, ctx, continue)
     local announced = WaCa.Latest and WaCa.Latest("hook." .. name)
     if not announced then
-        if not hooks[name] then log("events: Hook: %s - no mod handles it (announce it: WaCa.Publish('hook.%s', true, true)); going on", name, name) end
+        -- (once per hook: Clan Life's own hook points - ClanAssign ... - are usually unhandled, every duty would log it)
+        if not hooks[name] and not hookSaid[name] then
+            hookSaid[name] = true
+            log("events: Hook: %s - no mod handles it (announce it: WaCa.Publish('hook.%s', true, true)); going on", name, name)
+        end
         return continue()
     end
     local done = false

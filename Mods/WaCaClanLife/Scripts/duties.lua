@@ -1009,7 +1009,12 @@ local function publishStatus()
             s.where, s.goal = "Camp", "Talk to " .. ((t and t.who) or "your partner")
         else
             -- (MedicineCat -> "medicine cat": VM 2026-10-31 showed "Report to the medicinecat")
-            s.where, s.goal = "Camp", "Report to the " .. tostring(how):gsub("(%l)(%u)", "%1 %2"):lower()
+            if tostring(how):match("^S:") then
+                local cat = Events.Who(how)
+                s.where, s.goal = "Camp", "Report to " .. ((cat and WaCa.CatName(cat)) or "them")
+            else
+                s.where, s.goal = "Camp", "Report to the " .. tostring(how):gsub("(%l)(%u)", "%1 %2"):lower()
+            end
         end
     elseif today.stage == "event" then
         s.where = "Camp"
@@ -1541,6 +1546,10 @@ taskDone = function(t)
     local after = { Hunt = "Hunt done.", Patrol = "Patrol done.", Train = "Training done." }
     local where = { Pile = "Take your catch to the fresh-kill pile.", Partner = "Talk to " .. (t.who or "them") .. "." }
     -- (MedicineCat -> "medicine cat" here too - the HUD line had it, the card said "medicinecat": VM 2026-11-02)
+    if turnIn:match("^S:") then
+        local cat = Events.Who(turnIn)
+        where[turnIn] = "Report to " .. ((cat and WaCa.CatName(cat)) or "them") .. "."
+    end
     card((after[t.kind] or "Done.") .. " " .. (where[turnIn] or ("Report to the " .. turnIn:gsub("(%l)(%u)", "%1 %2"):lower() .. ".")))
 end
 
@@ -1569,6 +1578,10 @@ local function reportTarget(how)
             local fits
             if how == "Partner" then
                 fits = today.task and today.task.path and pathOf(a) == today.task.path
+            elseif tostring(how):match("^S:") then
+                -- (a pack's own role - TurnIn = S:herbalist: the cat [Cast] gives it, library exercise 2026-11-02)
+                local cat = Events.Who(how)
+                fits = cat and cat:IsValid() and pathOf(a) == pathOf(cat)
             else
                 fits = a.narrativeRole and a.narrativeRole > 0 and roleName(a.narrativeRole):find(how .. "$") ~= nil
             end
