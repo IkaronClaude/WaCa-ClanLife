@@ -18,6 +18,7 @@
 --   day with that Sync is on it and ready (its Advance met); then they cross together. No repeat limit: a long wait is
 --   the normal case. (Against the game's own quests the barrier can't hold - not built yet.)
 --   Owns = Morning[, Noon, Evening, Night] + <Third>Duty = <duty>: the pack's day takes that third's task.
+--   Goal = <text>: the story's own panel on the HUD that day (its Name and the goal).
 local Days = {}
 
 local WaCa, log, DayNight, Weather, Duties, Events
@@ -162,6 +163,12 @@ local function setUp(why)
         end
         log("days: %s day %d holds: %s%s", pk.name, pk.day, #keys > 0 and table.concat(keys, ", ") or "no beats",
             getIn(pk.days, pk.day, "Sync") and (" - the sync point " .. getIn(pk.days, pk.day, "Sync")) or "")
+        -- (ON THE HUD: a story day's Goal = <text> shows as the story's own panel - its name and the goal - until a day
+        -- without one; WaCa Core draws it with the others. The game's quest list itself: not yet)
+        if WaCa.HudPanel then
+            local goal = getIn(pk.days, pk.day, "Goal")
+            pcall(WaCa.HudPanel, "WaCaClanLife.story." .. pk.mod, goal and { title = pk.name, activity = goal, order = 60 } or nil)
+        end
     end
 end
 

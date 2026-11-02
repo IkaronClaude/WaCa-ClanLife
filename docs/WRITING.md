@@ -196,6 +196,9 @@ repeating its day while another catches up is the normal case. The log says who 
 task from the main story - your own duty from `duties.ini` too. When two packs own the same third, the one with the
 lower Priority wins and the log names the conflict.
 
+`Goal = <text>` on a day puts your story on the HUD that day - a panel with its Name and the goal, under the clan's
+day (gone on a day without one).
+
 Not built yet: holding the game's own quests at a sync point.
 
 The example pack's `story.ini` is a three-day story whose second day waits for the loner question to be answered.
