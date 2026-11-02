@@ -201,7 +201,7 @@ function StoryCheck.Run()
         for section, t in pairs(cs) do
             if type(t) == "table" and tostring(section):match("^Cutscene%.") then
                 for k, v in pairs(t) do
-                    local name = tostring(k):match("^Beat%d+$") and tostring(v):match("^%s*[%d%.]+%s+Set:%s*([%w%.%_]+)")
+                    local name = tostring(k):match("^Beat%d+$") and (tostring(v):match("^%s*[%d%.]+%s+Set:%s*([%w%.%_]+)") or tostring(v):match("^%s*[%d%.]+%s+Ask:%s*([%w%.%_]+)"))
                     if name then set[name] = true end
                 end
             end
