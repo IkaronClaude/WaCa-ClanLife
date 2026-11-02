@@ -225,6 +225,22 @@ start's party again. Not possible yet: a start rank (the game counts its rank qu
   `Combat`, `Guard` multipliers (1 = no change). A scene gives it to the cat for that save:
   `Emit: SetSpecialisation = Herbalist`.
 
+## 8c2. A panel on the HUD (`events.ini`)
+
+While part of your story runs, a panel in the game's quest look can say what your cat is about - it comes and goes with
+your story variables:
+
+```ini
+[Panel.LostKit]
+Title = Mosskit is lost
+Where = The territory
+Activity = Bring her home:
+Goal = Catch prey - its smell will draw her out
+Show = LostKit = 1            ; up while this holds
+Count = KitsFound             ; optional: a story variable shown as Count/Need, with Need = 3
+Done = LostKit = 2            ; optional: the check mark (else Count >= Need)
+```
+
 ## 8d. Duties of your own (`duties.ini`)
 
 A duty the deputy gives out like hunting or a patrol - a round of places your cat visits in order, each marked on

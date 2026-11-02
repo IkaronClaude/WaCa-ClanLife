@@ -1430,6 +1430,33 @@ end
 -- is there such a variable (a story variable set, or a provider)? (Events.Var answers 0 for any unknown name)
 function Events.Has(name) return providers[name] ~= nil or vars[name] ~= nil end
 
+-- A STORY'S PANEL ON THE HUD (library exercise 2026-11-02: a pack could tell its story only in cards - nothing lasting
+-- like "Find the lost kit: searched 1/3"): events.ini [Panel.<Name>] - Title, Where, Activity, Goal, Count (a story
+-- variable - or a number), Need, Show (conditions: while they hold the panel is up), Done (conditions: the check mark;
+-- else Count >= Need), Order (default 50: under the clan's day). Drawn by WaCa Core (WaCa.HudPanel), kept up to date
+-- whenever a story variable changes.
+local storyPanels, panelUp = {}, {}
+local function refreshPanels()
+    if not WaCa.HudPanel then return end
+    for name, p in pairs(storyPanels) do
+        local show = p.show == "" or Events.Check(p.show)
+        local id = "Story." .. name
+        if show then
+            local got = tonumber(p.count) or tonumber(Events.Var(p.count)) or 0
+            local need = tonumber(p.need)
+            local done = (p.done ~= "" and Events.Check(p.done)) or (need ~= nil and got >= need)
+            WaCa.HudPanel(id, { title = p.title, where = p.where, activity = p.activity, goal = p.goal,
+                                got = need and got or nil, need = need, done = done, order = p.order })
+            if not panelUp[name] then log("events: the story's panel %s is up", name) end
+            panelUp[name] = true
+        elseif panelUp[name] then
+            WaCa.HudPanel(id, nil)
+            panelUp[name] = nil
+            log("events: the story's panel %s is down", name)
+        end
+    end
+end
+
 function Events.SetVar(name, value)
     local n = tonumber(value)
     if n then value = n end
@@ -1437,6 +1464,7 @@ function Events.SetVar(name, value)
     vars[name] = value
     log("events: %s = %s", name, tostring(value))
     WaCa.Emit("StoryVar", name, value)
+    pcall(refreshPanels)
 end
 
 local OPS = {
@@ -1955,6 +1983,17 @@ function Events.Init(c)
         if k then k() end
     end)
     hookWait = tonumber((ini["Events"] or {}).HookWait or "") or hookWait
+    for section, sec in pairs(ini) do
+        local name = type(sec) == "table" and section:match("^Panel%.([%w_]+)$")
+        if name and sec.Off ~= "1" then
+            local function v(k) return (sec[k] or "") ~= "" and sec[k] or nil end
+            storyPanels[name] = { title = v("Title") or name, where = v("Where"), activity = v("Activity"), goal = v("Goal"),
+                                  count = sec.Count or "", need = v("Need"), show = sec.Show or "", done = sec.Done or "",
+                                  order = tonumber(sec.Order or "") or 50 }
+        end
+    end
+    -- (a reload with the world up: the panels for this save's story as it stands)
+    ExecuteInGameThreadWithDelay(3000, function() if WaCa.CurrentSlot() then pcall(refreshPanels) end end)
     WaCa.On("PlayScene", function(text)
         local steps = { context = {} }                  -- (a scene's own context: its gathered cats, its place)
         for line in tostring(text or ""):gmatch("[^|]+") do
@@ -2011,6 +2050,7 @@ function Events.Init(c)
             for k, v in pairs((WaCa.ReadIni(WaCa.SlotFile("WaCaStory") or "") or {})["Vars"] or {}) do
                 if k ~= "__order" then vars[k] = tonumber(v) or v end
             end
+            pcall(refreshPanels)
             -- (a Party step's party is this cat's: set again for the session)
             if vars.Party and vars.Party ~= 0 and WaCa.SetCombatParty then
                 local roles = {}
