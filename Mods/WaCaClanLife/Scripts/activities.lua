@@ -361,6 +361,24 @@ function Activities.Init(c)
     end
     table.sort(cfg.list, function(a, b) return a.name < b.name end)
     log("activities: ambient %s (%d activities, every %d s)", cfg.on and "on" or "off", #cfg.list, cfg.every)
+    -- (A CAT DOES AN ACTIVITY NOW - library exercise 2026-11-03: a story / another mod / a test makes a given cat do a
+    -- named [Activity.*]: WaCa.Emit("StartActivity", "<activity>", "<cat's object path>") - joinable like any; works
+    -- with the ambient scheduler off)
+    WaCa.On("StartActivity", function(name, path)
+        ExecuteInGameThread(function()
+            local act
+            for _, a in ipairs(cfg.list) do if a.name:lower() == tostring(name):lower() then act = a end end
+            local cat = WaCa.Live(StaticFindObject(tostring(path or "")))
+            if not (act and cat) then
+                log("activities: StartActivity - %s", not act and ("no activity " .. tostring(name)) or ("no cat " .. tostring(path)))
+                return
+            end
+            local montage = LoadAsset(act.montage) or WaCa.LoadAsset(act.montage)
+            local len = montage and playOn(cat, montage) or 0
+            noteDoing(cat, act, math.max(len, 10))
+            log("activities: %s - %s (asked for, %.1f s)", cat:GetFName():ToString(), act.name, len)
+        end)
+    end)
     if not cfg.on or #cfg.list == 0 then return end
     WaCa.On("ScreenShown", function(screen)
         if running or not screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then return end
