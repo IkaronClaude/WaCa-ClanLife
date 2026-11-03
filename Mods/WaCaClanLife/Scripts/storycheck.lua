@@ -232,10 +232,17 @@ function StoryCheck.Run()
         for section, t in pairs(cs) do
             if type(t) == "table" and tostring(section):match("^Cutscene%.") then
                 for k, v in pairs(t) do
-                    local ask = tostring(k):match("^Beat%d+$") and tostring(v):match("^%s*[%d%.]+%s+Ask:%s*(.-)%s*$")
-                    if ask then choiceShape("cutscenes", section, k, ask) end
-                    local name = tostring(k):match("^Beat%d+$") and (tostring(v):match("^%s*[%d%.]+%s+Set:%s*([%w%.%_]+)") or tostring(v):match("^%s*[%d%.]+%s+Ask:%s*([%w%.%_]+)"))
-                    if name then set[name] = true end
+                    if tostring(k):match("^Beat%d+$") then
+                        -- (a beat's [guard] - WaCa Cutscenes' [Var = value] before the action: its variables are tested
+                        -- like an If: (library exercise 2026-11-03); the action read past it)
+                        local guard, rest = tostring(v):match("^%s*[%d%.]+%s+%[(.-)%]%s*(.*)$")
+                        if guard then tested[#tested + 1] = { "cutscenes", section, k, guard } end
+                        local action = guard and rest or tostring(v):match("^%s*[%d%.]+%s+(.*)$") or ""
+                        local ask = action:match("^Ask:%s*(.-)%s*$")
+                        if ask then choiceShape("cutscenes", section, k, ask) end
+                        local name = action:match("^Set:%s*([%w%.%_]+)") or action:match("^Ask:%s*([%w%.%_]+)")
+                        if name then set[name] = true end
+                    end
                 end
             end
         end
