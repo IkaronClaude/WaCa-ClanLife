@@ -1736,6 +1736,10 @@ local function runStep(s, ctx, nextStep, stop, jump)
     elseif k == "Pose" then
         Events.Pose(s.value, s.who, ctx)
         nextStep()
+    elseif k == "Newcomer" then
+        -- (Newcomer: <clanmate> - a new cat joins the clan, taking after that clanmate - kits.lua)
+        WaCa.Emit("Newcomer", s.value)
+        nextStep()
     elseif k == "Activity" then
         -- (Activity: <name> @ <who> - that cat does one of activities.ini's [Activity.*] now, joinable with the Join key;
         -- library exercise 2026-11-03)

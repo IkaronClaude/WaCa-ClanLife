@@ -5,10 +5,15 @@
 -- clan - its door in camp), placed there whenever the world is up. Kept with the save (a sidecar written when the
 -- game saves, like the time of day) - a birth the game never saved is gone with that save, as anything else.
 -- Other mods / a story: WaCa.Emit("HaveKits", mate[, count]); event KitsBorn(mate, names) after.
+-- A NEWCOMER (library exercise 2026-11-03: a pack could rename / restyle a cat of the save, never bring a new one in):
+-- WaCa.Emit("Newcomer", "<a clanmate's name>") - a grown cat that takes after that clanmate (its look blended with
+-- itself: each trait from it, a new prefix from the game's own unused ones, the clanmate's suffix and rank), full size,
+-- placed about the camp's middle, kept with the save like the kits; event NewcomerJoined(name, like) after. Works with
+-- [Kits] On = 0 (that switch is for births).
 local Kits = {}
 
 local WaCa, log
-local cfg = { on = true, countMin = 1, countMax = 3, spread = 160, apprenticeAfter = 0, apprenticeScale = 0.8 }
+local cfg = { on = true, countMin = 1, countMax = 3, spread = 160, apprenticeAfter = 0, apprenticeScale = 0.8, newcomerRing = 500 }
 local kits = {}                 -- { name, look, mate, born (day) }
 local spawned = {}              -- kit name -> actor path
 local restoredFor = nil
@@ -58,11 +63,14 @@ end
 
 -- the kits by the nursery: a half ring in front of its door, facing the camp
 local function place()
-    if not cfg.on or #kits == 0 then return end
+    if #kits == 0 then return end
     local door = nursery()
+    local camp
+    pcall(function() camp = require("duties").Camp().middle end)
     if not door then
         log("kits: no nursery of your clan in this world - the kits stay unseen")
-        return
+        door = camp
+        if not door then return end
     end
     local out = { X = 0, Y = 1 }
     pcall(function()
@@ -75,13 +83,16 @@ local function place()
     local placed = {}
     -- (a kit already standing there from before a reload of Clan Life - the paths kept in memory are gone with it: it
     -- is taken up again, not spawned twice)
+    -- (by name, anywhere: a newcomer stands about the camp, not by the nursery - it was spawned a second time after a
+    -- reload when only the nursery was looked at, VM 2026-11-03; the names are this save's own kits' / newcomers')
+    local ours = {}
+    for _, kit in ipairs(kits) do ours[kit.name] = true end
     local standing = {}
     for _, c in ipairs(FindAllOf("BP_WrcSK_Customization_Cat_C") or {}) do
         pcall(function()
             if c:IsValid() and not c.bHidden then
-                local q = c:K2_GetActorLocation()
-                if (q.X - door.X) ^ 2 + (q.Y - door.Y) ^ 2 < (cfg.spread * 3) ^ 2 then
-                    local nm = WaCa.CatName(c) or ""
+                local nm = WaCa.CatName(c) or ""
+                if ours[nm] then
                     standing[nm] = standing[nm] or {}
                     table.insert(standing[nm], pathOf(c))
                 end
@@ -97,11 +108,21 @@ local function place()
                 local extra = StaticFindObject(list[j])
                 if extra and extra:IsValid() then WaCa.Despawn(extra) end
             end
-            log("kits: %s was by the nursery already (from before a reload) - kept%s", kit.name,
+            log("kits: %s was there already (from before a reload) - kept%s", kit.name,
                 #list > 1 and string.format(", %d extra cop(ies) removed", #list - 1) or "")
         end
         local a = spawned[kit.name] and StaticFindObject(spawned[kit.name])
-        if not (a and a:IsValid()) then
+        if not (a and a:IsValid()) and kit.adult then
+            -- (a newcomer: in a ring about the camp's middle, full size - not by the nursery)
+            local mid = camp or door
+            local ang = math.rad(i * 47)
+            local x, y = mid.X + math.cos(ang) * cfg.newcomerRing, mid.Y + math.sin(ang) * cfg.newcomerRing
+            local cat = WaCa.SpawnCat(kit.look, { X = x, Y = y, Z = groundUnder(x, y, mid.Z) }, math.deg(ang) + 180, 1.0)
+            if cat then
+                spawned[kit.name] = pathOf(cat)
+                placed[#placed + 1] = kit.name
+            end
+        elseif not (a and a:IsValid()) then
             -- (a half ring in front of the door: kit 1 straight out, the others to its sides)
             local side = (i % 2 == 0) and 1 or -1
             local turn = math.floor(i / 2) * 0.6 * side
@@ -117,7 +138,7 @@ local function place()
             end
         end
     end
-    if #placed > 0 then log("kits: %s by the nursery", table.concat(placed, ", ")) end
+    if #placed > 0 then log("kits: %s placed (kits by the nursery, newcomers about the camp)", table.concat(placed, ", ")) end
 end
 
 local function keep()
@@ -128,7 +149,8 @@ local function keep()
     for i, kit in ipairs(kits) do
         local key = "Kit" .. i
         data[key] = { Name = kit.name, Mate = kit.mate or "", Born = tostring(kit.born or 0), Grown = kit.grown and "1" or "0",
-                      Look = kit.look, __order = { "Name", "Mate", "Born", "Grown", "Look" } }
+                      Adult = kit.adult and "1" or "0", Like = kit.like or "", Look = kit.look,
+                      __order = { "Name", "Mate", "Born", "Grown", "Adult", "Like", "Look" } }
         data.__order[#data.__order + 1] = key
     end
     WaCa.WriteIni(path, data, "; WaCa Clan Life - this save's own kits (kits.lua)")
@@ -150,7 +172,7 @@ local function restore()
         local k = data["Kit" .. i]
         if (k.Look or "") ~= "" then
             kits[#kits + 1] = { name = k.Name, look = k.Look, mate = k.Mate, born = tonumber(k.Born or "") or 0,
-                                grown = k.Grown == "1" }
+                                grown = k.Grown == "1", adult = k.Adult == "1", like = (k.Like or "") ~= "" and k.Like or nil }
         end
         i = i + 1
     end
@@ -177,7 +199,7 @@ local function growUp(today)
     if (cfg.apprenticeAfter or 0) <= 0 then return end
     local grew = {}
     for _, kit in ipairs(kits) do
-        if not kit.grown and today - (kit.born or today) >= cfg.apprenticeAfter then
+        if not kit.grown and not kit.adult and today - (kit.born or today) >= cfg.apprenticeAfter then
             local prefix = kit.look:match('PrefixNameId="([^"]*)"') or ""
             local paw = prefix ~= "" and WaCa.GetText(prefix .. "_PAW") or ""
             kit.grown = true
@@ -228,6 +250,35 @@ function Kits.Born(mate, count)
     return names
 end
 
+-- a newcomer taking after the clanmate `like` - its name, or nil
+function Kits.Newcomer(like)
+    local look = like and lookOfMate(like)
+    if not look then
+        log("kits: newcomer - no clanmate '%s' to take after", tostring(like))
+        return nil
+    end
+    local role = look:match("Role=(%w+)") or "Warrior"
+    local suffix = look:match('SuffixNameId="([^"]*)"') or ""
+    local used = {}
+    for _, k in ipairs(kits) do used[k.name] = true end
+    for _ = 1, 16 do
+        local blended = WaCa.BlendLooks(look, look)
+        local prefix = blended and blended:match('PrefixNameId="([^"]*)"') or ""
+        local name = (prefix ~= "" and suffix ~= "") and WaCa.GetText(prefix .. suffix) or ""
+        if name ~= "" and name ~= prefix .. suffix and not used[name] then
+            local grown = blended:gsub('SuffixNameId="[^"]*"', 'SuffixNameId="' .. suffix .. '"'):gsub("Role=%w+", "Role=" .. role)
+            kits[#kits + 1] = { name = name, look = grown, mate = "", grown = true, adult = true, like = like,
+                                born = DayNight and DayNight.Day and DayNight.Day() or 0 }
+            log("kits: a newcomer joins the clan - %s (%s, taking after %s)", name, role, like)
+            place()
+            WaCa.Emit("NewcomerJoined", name, like)
+            return name
+        end
+    end
+    log("kits: newcomer - no free name for one taking after %s", like)
+    return nil
+end
+
 function Kits.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
     local ini = WaCa.ReadContent(c.modDir .. "/config/kits.ini", "kits") or {}
@@ -239,14 +290,24 @@ function Kits.Init(c)
     cfg.spread = tonumber(k.Spread or "") or cfg.spread
     cfg.apprenticeAfter = tonumber(k.ApprenticeAfter or "") or cfg.apprenticeAfter
     cfg.apprenticeScale = tonumber(k.ApprenticeScale or "") or cfg.apprenticeScale
+    cfg.newcomerRing = tonumber(k.NewcomerRing or "") or cfg.newcomerRing
     log("kits: %s (%d-%d a litter, by the nursery)", cfg.on and "on" or "off", cfg.countMin, cfg.countMax)
-    if not cfg.on then return end
-    WaCa.On("HaveKits", function(mate, count)
+    -- (newcomers whatever [Kits] On says - the save's kits / newcomers placed and kept the same way)
+    WaCa.On("Newcomer", function(like)
         ExecuteInGameThread(function()
-            local ok, err = pcall(Kits.Born, mate, count)
-            if not ok then log("kits: the birth failed (%s)", tostring(err)) end
+            pcall(restore)
+            local ok, err = pcall(Kits.Newcomer, like)
+            if not ok then log("kits: the newcomer failed (%s)", tostring(err)) end
         end)
     end)
+    if cfg.on then
+        WaCa.On("HaveKits", function(mate, count)
+            ExecuteInGameThread(function()
+                local ok, err = pcall(Kits.Born, mate, count)
+                if not ok then log("kits: the birth failed (%s)", tostring(err)) end
+            end)
+        end)
+    end
     WaCa.On("GameSaved", function()
         restore()
         keep()

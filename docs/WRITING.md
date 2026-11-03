@@ -69,6 +69,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Set: <var> = <value>` | sets a story variable (section 5) - `Set: X = Day + 2` works too |
 | `Add: <var> <n>` | adds to one (`Add: LeaderFavour 2`) |
 | `If: <conditions>` | the rest of the scene only if they hold - or, with `Else` / `EndIf` steps after it, the steps up to `Else` (or `EndIf`) only; `Else` ... `EndIf` when they don't (not nested) |
+| `Newcomer: <clanmate>` | a new cat joins the clan, taking after that clanmate (8c) |
 | `Activity: <name> @ <who>` | that cat does one of `activities.ini`'s activities now (Sit, Nap, Sniff ...) - your cat can join it with the Join key |
 | `Choice: <variable> = <question>; <answer 1>; <answer 2> ...` | the player picks an answer (number keys 1-4, up to four answers); the variable gets its number - then `If: <variable> = 1` ... |
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
@@ -248,6 +249,10 @@ start's party again. Not possible yet: a start rank (the game counts its rank qu
   (`[Cat.Troutwing]`) or by its story role (`[Narrative.TheMistrustfulLeader]`, whoever plays it in that save):
   `Name = Mossfeather` renames it, look keys (`Fur = #7B8A5A`, `ScarEarId = 6` - only values the game's own cats use)
   dress it. Every key is in WaCa Looks' `rosters/Example.ini`. Your scenes and `[Cast]` then use its new name.
+- **A new clanmate** (no file needed): the scene step `Newcomer: <clanmate>` brings a grown cat into the clan that
+  takes after that clanmate - its look, its rank and the end of its name, a new first part from the game's own names
+  (`Newcomer: Nightheart` -> e.g. Emberheart). It stands about the camp from then on and is kept with the save; other
+  mods: `WaCa.Emit("Newcomer", "<clanmate>")`, event `NewcomerJoined(name, like)` after.
 - **A specialisation for the player's cat** (`roles.ini`, needs WaCa Hunting): `[Role.Herbalist]` with `Hunt`, `Fish`,
   `Combat`, `Guard` multipliers (1 = no change). A scene gives it to the cat for that save:
   `Emit: SetSpecialisation = Herbalist`.
