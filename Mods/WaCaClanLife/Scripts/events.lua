@@ -347,7 +347,16 @@ function Events.Who(name)
         end)
         if found then return found end
     end
-    return fallback
+    if fallback then return fallback end
+    -- (BY NAME - library exercise 2026-11-03: '@ Emberheart' found no cat; who resolved roles only. The world's cats by
+    -- their name, a mod's spawned ones too - WaCa.Cats - the nearest of that name)
+    if WaCa.Cats then
+        local want = tostring(role or name):lower()
+        for _, c in ipairs(WaCa.Cats()) do
+            if c.name and c.name:lower() == want then return c.actor end
+        end
+    end
+    return nil
 end
 
 -- --- staging: clanmates gathered around a place, poses (the game's own animation montages) ---

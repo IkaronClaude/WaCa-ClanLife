@@ -376,7 +376,7 @@ function Activities.Init(c)
             local montage = LoadAsset(act.montage) or WaCa.LoadAsset(act.montage)
             local len = montage and playOn(cat, montage) or 0
             noteDoing(cat, act, math.max(len, 10))
-            log("activities: %s - %s (asked for, %.1f s)", cat:GetFName():ToString(), act.name, len)
+            log("activities: %s - %s (asked for, %.1f s)", WaCa.CatName(cat) or cat:GetFName():ToString(), act.name, len)
         end)
     end)
     if not cfg.on or #cfg.list == 0 then return end

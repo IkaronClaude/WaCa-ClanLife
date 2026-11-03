@@ -85,7 +85,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 ## 4. Who - naming cats
 
 - **Parts of your clan:** `Leader`, `Deputy`, `MedicineCat`, `Nearest` (the nearest clanmate), `Player`.
-- **A cat by its name:** `Lionstar`.
+- **A cat by its name:** `Lionstar` - any cat in the world, a newcomer or a kit of yours too (the nearest of that name).
 - **A story role:** `E:RiverClanDeputy`.
 - **Your own role:** `S:<role>`, given a cat in `events.ini`:
 
