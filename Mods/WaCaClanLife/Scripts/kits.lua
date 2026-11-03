@@ -100,7 +100,12 @@ local function place()
         end)
     end
     for i, kit in ipairs(kits) do
-        -- (a newcomer kept before plates had a rank line: the clanmate's plate's now)
+        -- (the plate's rank line: the game's text for the role the cat's look carries (Role=Kit -> STR_GIVER_ROLE_KIT);
+        -- else, for a newcomer, the clanmate's own plate's)
+        -- (what it IS here: a kit, a grown kit = an apprentice, a newcomer = its look's rank - kits born before BlendLooks
+        -- set Role = Kit carry their parent's "Warrior" in the look, VM 2026-11-03)
+        local is = kit.adult and tostring(kit.look):match("Role=(%w+)") or (kit.grown and "Apprentice" or "Kit")
+        if not kit.role and WaCa.RoleText then kit.role = WaCa.RoleText(is) end
         if kit.adult and not kit.role and kit.like and WaCa.PlateRole then kit.role = WaCa.PlateRole(kit.like) end
         if not spawned[kit.name] and standing[kit.name] then
             -- (one kept; copies more reloads left behind - before this was fixed each one spawned the kits again - go)
@@ -210,6 +215,7 @@ local function growUp(today)
             local prefix = kit.look:match('PrefixNameId="([^"]*)"') or ""
             local paw = prefix ~= "" and WaCa.GetText(prefix .. "_PAW") or ""
             kit.grown = true
+            kit.role = nil                              -- (its plate's rank line read again: Apprentice now)
             kit.look = kit.look:gsub('SuffixNameId="[^"]*"', 'SuffixNameId="_PAW"'):gsub("Role=%w+", "Role=Apprentice")
             local old = kit.name
             if paw ~= "" then kit.name = paw end
@@ -275,7 +281,7 @@ function Kits.Newcomer(like)
         if name ~= "" and name ~= prefix .. suffix and not used[name] then
             local grown = blended:gsub('SuffixNameId="[^"]*"', 'SuffixNameId="' .. suffix .. '"'):gsub("Role=%w+", "Role=" .. role)
             -- (the rank line: the clanmate's own plate's - the game's word in the game's language)
-            local plateRole = WaCa.PlateRole and WaCa.PlateRole(like) or nil
+            local plateRole = (WaCa.RoleText and WaCa.RoleText(role)) or (WaCa.PlateRole and WaCa.PlateRole(like)) or nil
             kits[#kits + 1] = { name = name, look = grown, mate = "", grown = true, adult = true, like = like, role = plateRole,
                                 born = DayNight and DayNight.Day and DayNight.Day() or 0 }
             log("kits: a newcomer joins the clan - %s (%s, taking after %s)", name, role, like)
