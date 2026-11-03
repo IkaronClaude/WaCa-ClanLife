@@ -102,16 +102,20 @@ end
 -- THE GAME'S ANSWER MENU (operator 2026-11-03: "Game's answer menu"): the quest dialogue screen
 -- (WBP_QuestGiver_Dialogue - its paragraph, speaker plate, answer buttons 1-4), made and filled by us. Its buttons
 -- don't answer our input by themselves (VM: no hover / key / click reached them - the screen's own logic wants a
--- quest dialogue node), so the choosing is ours: Up / Down + Enter / Space, the number keys, the mouse (hover picks,
+-- quest dialogue node), so the choosing is ours: the game's Up / Down / A commands (keyboard and pad), the number keys, the mouse (hover picks,
 -- a click answers - WaCa.MouseOver on the drawn buttons); the game's own highlight (CanvasSelected) shows the pick.
 -- The game shows the mouse cursor for it on its own (it is a screen). The centre card is the fallback.
-local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumPadTwo = 2, NumPadThree = 3, NumPadFour = 4,
-                      -- (a gamepad's face buttons: bottom 1, right 2, left 3, top 4 - untested, the VM has no gamepad)
-                      Gamepad_FaceButton_Bottom = 1, Gamepad_FaceButton_Right = 2, Gamepad_FaceButton_Left = 3,
-                      Gamepad_FaceButton_Top = 4 }
+local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumPadTwo = 2, NumPadThree = 3, NumPadFour = 4 }
 local DIALOGUE = "/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue.WBP_QuestGiver_Dialogue_C"
-local MOVE_KEYS = { Up = -1, Down = 1, Gamepad_DPad_Up = -1, Gamepad_DPad_Down = 1 }
-local PICK_KEYS = { Enter = true, SpaceBar = true, LeftMouseButton = true }
+-- UP / DOWN / ANSWER BY THE GAME'S OWN COMMANDS (library sweep 2026-11-03: the gamepad entries this had could never
+-- fire - WaCa's KeyDown comes from keyboard / mouse window messages only): the game turns every device into screen
+-- commands (ECommands, OnListenCommand on its screens: the arrows / D-pad / stick -> Button_Up 1 / Button_Down 2, Enter /
+-- the pad's A -> Button_A 5), so the game's own mapping - keyboard and pad alike - moves and answers. Number keys and the
+-- mouse stay on KeyDown.
+local CMD_MOVE = { ["1"] = -1, ["2"] = 1, ["15"] = -1, ["16"] = 1 }      -- Button_Up / Down, StickL_Up / Down
+local CMD_PICK = { ["5"] = true }                                        -- Button_A
+local commandDown = {}                  -- command -> true between its press and its release
+local PICK_KEYS = { LeftMouseButton = true }
 local pendingChoice
 -- (A RELOAD MID-CHOICE - VM 2026-11-02: the card stayed on screen for good and the keys did nothing; the scene it was
 -- in can't go on after a reload. The card's widget is kept in Saved/WaCaSceneChoice.ini while it is up; Clan Life
@@ -248,13 +252,9 @@ local function answerChoice(key)
     if not c then return end
     key = tostring(key)
     local n = NUMBER_KEYS[key]
-    if c.menu and MOVE_KEYS[key] then
-        Events.ChoiceSelect((c.pick - 1 + MOVE_KEYS[key]) % c.n + 1)
-        return
-    end
     if c.menu and PICK_KEYS[key] then
         -- (a click answers only over an answer - not anywhere on the screen)
-        if key == "LeftMouseButton" then n = c.hovered else n = c.pick end
+        n = c.hovered
     end
     if not (n and n <= c.n) then return end
     pendingChoice = nil
@@ -2220,6 +2220,24 @@ function Events.Init(c)
         if WaCa.CurrentSlot() then Events.RecoverGathered() else Events.ForgetRecords() end
     end)
     WaCa.On("KeyDown", function(_, key) if pendingChoice then pcall(answerChoice, key) end end)
+    -- (the game's screen commands for the answer menu - pressed (0), held (2), released (1). One press can reach several
+    -- screens: a press counts only while its command isn't down already, its release lets the next one count - by time
+    -- it went wrong: the VM handled two presses 3 ms apart in game time and the second was dropped)
+    WaCa.Watch("OnListenCommand", "/Script/SwtEngine.SwtScreen", "WaCaChoiceCommand", "pre", "Command,InputEvent")
+    WaCa.On("WaCaChoiceCommand", function(_, command, inputEvent)
+        local c = pendingChoice
+        if inputEvent == "1" then commandDown[command] = nil return end
+        if not (c and c.menu) or (inputEvent ~= "0" and inputEvent ~= "2") then return end
+        if inputEvent == "0" then
+            if commandDown[command] then return end
+            commandDown[command] = true
+        end
+        if CMD_MOVE[command] then
+            Events.ChoiceSelect((c.pick - 1 + CMD_MOVE[command]) % c.n + 1)
+        elseif CMD_PICK[command] then
+            pcall(answerChoice, ({ "One", "Two", "Three", "Four" })[c.pick])
+        end
+    end)
     WaCa.On("StoryHookDone", function(name)
         local k = pendingHooks[tostring(name)]
         pendingHooks[tostring(name)] = nil
