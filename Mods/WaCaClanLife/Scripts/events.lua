@@ -388,7 +388,31 @@ function Events.Cast(only)
                 any = true
             elseif not only and not castMissed[key] then
                 castMissed[key] = true
-                log("events: [Cast] %s = %s - no such cat about yet (tried again every 10 s till it is)", key, spec)
+                -- (a misspelled name - "Nighthart" - was tried every 10 s for good, with no hint: the nearest name of the
+                -- save's cats, when one is close; library pre-work 2026-11-03)
+                local hint = ""
+                pcall(function()
+                    if spec:match("^E:") or spec:match("^%u%l+:") then return end
+                    local best, bestD
+                    local names = {}
+                    for _, c in ipairs(WaCa.StoryCats() or {}) do if c.name then names[c.name] = true end end
+                    for _, c in ipairs(cats) do if c.name then names[c.name] = true end end
+                    for n in pairs(names) do
+                        local a2, b2 = spec:lower(), n:lower()
+                        local prev = {}
+                        for j = 0, #b2 do prev[j] = j end
+                        for i = 1, #a2 do
+                            local cur = { [0] = i }
+                            for j = 1, #b2 do
+                                cur[j] = math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + ((a2:sub(i, i) == b2:sub(j, j)) and 0 or 1))
+                            end
+                            prev = cur
+                        end
+                        if not bestD or prev[#b2] < bestD then best, bestD = n, prev[#b2] end
+                    end
+                    if best and bestD > 0 and bestD <= 2 then hint = " - did you mean " .. best .. "?" end
+                end)
+                log("events: [Cast] %s = %s - no such cat about yet (tried again every 10 s till it is)%s", key, spec, hint)
             end
         end
     end
