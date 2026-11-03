@@ -51,8 +51,9 @@ Step2 = Set: SawLoner = 1
 - `GatheringHeld`, `KitsBorn`, `MateChosen`, and any other event a mod sends.
 
 `When = Reach: <place>` plays the event when your cat comes within `Radius` (cm, default 800) of a place - a place
-from WaCa Cutscenes' `places.ini` (your pack's own too: `[Place.ReedBank] At = x y z` -> `Reach: ReedBank`), `Pile`, or
-plain `x y z`. Once a day at most (`Once = 1`: once a save), never over a menu or a cutscene; the log says when it was
+from WaCa Cutscenes' `places.ini` (your pack's own too: `[Place.ReedBank] At = x y z` -> `Reach: ReedBank`), `Pile`,
+plain `x y z`, or a cat (`Reach: S:storyteller`, `Reach: Leader`, a name - wherever that cat is now, so "when your cat meets
+her" works even if she walks up to you). Once a day at most (`Once = 1`: once a save), never over a menu or a cutscene; the log says when it was
 reached and, if it didn't play, why.
 
 A mod can run an event by name from Lua: `WaCa.Emit("ClanEvent", "<name>")`. A story can force or block one

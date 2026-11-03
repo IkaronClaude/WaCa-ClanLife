@@ -1930,7 +1930,13 @@ local function reachPlace(spec)
             end
         end)
     end
-    return reachState.places[(spec:gsub("^Place%.", ""))]
+    local place = reachState.places[(spec:gsub("^Place%.", ""))]
+    if place then return place end
+    -- (or a CAT - its role or name: Reach: S:storyteller / Leader / Nightheart - "when your cat meets her"; where the cat
+    -- is now, so it follows a cat that walks)
+    local ok, cat = pcall(function() return Events.Who(spec) end)
+    cat = ok and WaCa.Live(cat)
+    return cat and cat:K2_GetActorLocation() or nil
 end
 local function reachCheck(pawn)
     if reachState.running then return end
@@ -1941,7 +1947,7 @@ local function reachCheck(pawn)
             local place = reachPlace(spec)
             if not place and not e.warned then
                 e.warned = true
-                log("duties: event %s - no place '%s' (places.ini [Place.<Name>], Pile, or x y z)", e.name, spec)
+                log("duties: event %s - no place or cat '%s' about (places.ini [Place.<Name>], Pile, x y z, or a cat: S:<role>, a part, a name)", e.name, spec)
             end
             if place then
                 at = at or pawn:K2_GetActorLocation()
@@ -2291,6 +2297,8 @@ function Duties.Init(c)
                 day = tonumber(sec.Day or ""), every = tonumber(sec.Every or ""), only = tonumber(sec.OnlyDay or ""),
                 once = (sec.Once or "0") == "1", require = sec.Require, order = tonumber(sec.Order or ""),
                 radius = tonumber(sec.Radius or "") or 800, steps = Events.Lines(sec, "Step") })
+            local spec = tostring(sec.When):match("^Reach:%s*(.+)$")
+            if spec and not spec:match("^%-?[%d.]+%s") and spec ~= "Pile" then reachState.anyCat = true end
         end
     end
     table.sort(cfg.clanEvents, function(a, b) return a.name < b.name end)
@@ -2464,7 +2472,15 @@ function Duties.Init(c)
         if owner ~= me then
             local pawn = pc() and pc().Pawn
             me = pawn and pawn:GetAddress() or me
-            if owner ~= me then return end
+            if owner ~= me then
+                -- (another cat's step: a Reach: <cat> event checks too - the cat may walk up to yours while yours stands
+                -- still; twice a second at most, and only while some event waits on a cat)
+                if reachState.anyCat and os.clock() - (reachState.lastOther or 0) > 0.5 then
+                    reachState.lastOther = os.clock()
+                    pcall(reachCheck, pawn)
+                end
+                return
+            end
         end
         steps = steps + 1
         if steps % cfg.stepEvery == 0 then where() end
