@@ -340,7 +340,7 @@ function Activities.Init(c)
     log("activities: joining %s (key %s, bond +%d, %d per cat and day)", join.on and "on" or "off", join.key, join.bond, join.perDay)
     if join.on then
         WaCa.On("KeyDown", function(_, name)
-            if tostring(name) == join.key then
+            if WaCa.KeyIs(name, join.key) then
                 local ok, err = pcall(joinNow)
                 if not ok then log("activities: joining failed (%s)", tostring(err)) end
             end

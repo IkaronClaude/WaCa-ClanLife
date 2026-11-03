@@ -146,7 +146,7 @@ function TimeSkip.Init(c)
         WaCa.On("KeyDown", function(_, name)
             -- only in the world: not in a menu, the player's cat is there
             local c = pc()
-            if tostring(name) ~= cfg.key or WaCa.InMenu() or not (c and c.Pawn and c.Pawn:IsValid()) then return end
+            if not WaCa.KeyIs(name, cfg.key) or WaCa.InMenu() or not (c and c.Pawn and c.Pawn:IsValid()) then return end
             log("timeskip: your cat rests (%s)", cfg.key)
             TimeSkip.Skip(cfg.days)
         end)

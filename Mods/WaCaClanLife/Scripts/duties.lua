@@ -2334,7 +2334,7 @@ function Duties.Init(c)
         if not ok then log("duties: the meeting place failed (%s)", tostring(err)) end
     end)
     WaCa.On("KeyDown", function(_, name)
-        if tostring(name) ~= cfg.reportKey then return end
+        if not WaCa.KeyIs(name, cfg.reportKey) then return end
         local ok, err = pcall(reportKey)
         if not ok then log("duties: the report key failed (%s)", tostring(err)) end
     end)

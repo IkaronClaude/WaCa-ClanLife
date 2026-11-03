@@ -152,7 +152,7 @@ function Romance.Init(c)
         cfg.minBond, cfg.minRank, cfg.kitsAfter)
     if not cfg.on then return end
     WaCa.On("KeyDown", function(_, name)
-        if name ~= cfg.key or WaCa.InMenu() then return end
+        if not WaCa.KeyIs(name, cfg.key) or WaCa.InMenu() then return end
         local ok, err = pcall(ask)
         if not ok then log("romance: the asking failed (%s)", tostring(err)) end
     end)
