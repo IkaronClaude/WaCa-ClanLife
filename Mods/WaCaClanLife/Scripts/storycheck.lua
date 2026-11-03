@@ -138,6 +138,56 @@ function StoryCheck.Run()
             end
         end
     end
+    -- (a story day's KEYS - days.ini and each pack's story.ini [Day.N]: a misspelled one - "Goall", "Advnce" - did nothing,
+    -- without a word, and a lost Advance made the day repeat for good; library pre-work 2026-11-03)
+    local DAYKEYS = { Like = true, Advance = true, Events = true, NoEvents = true, Gathering = true, GatheringPick = true,
+                      Goal = true, Hunt = true, Patrol = true, Place = true, Season = true, Weather = true, Summary = true,
+                      Sync = true, Owns = true }
+    local PHASES = { Morning = true, Noon = true, Afternoon = true, Evening = true, Night = true }
+    local function dayKey(k)
+        if DAYKEYS[k] then return true end
+        local phase, rest = tostring(k):match("^(%u%l+)(.*)$")
+        if not (phase and PHASES[phase]) then return false end
+        return rest == "Duty" or rest:match("^%d*$") ~= nil or rest:match("^Start%d*$") ~= nil or rest:match("^After%d*$") ~= nil
+    end
+    local function nearestDayKey(k)
+        local best, bestD
+        local pool = {}
+        for d in pairs(DAYKEYS) do pool[#pool + 1] = d end
+        for ph in pairs(PHASES) do
+            local base = tostring(k):gsub("%d+$", "")
+            for _, tail in ipairs({ "", "Start", "After", "Duty" }) do pool[#pool + 1] = ph .. tail end
+        end
+        for _, cand in ipairs(pool) do
+            local a2, b2 = tostring(k):gsub("%d+$", ""):lower(), cand:lower()
+            local prev = {}
+            for j = 0, #b2 do prev[j] = j end
+            for i = 1, #a2 do
+                local cur = { [0] = i }
+                for j = 1, #b2 do
+                    cur[j] = math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + ((a2:sub(i, i) == b2:sub(j, j)) and 0 or 1))
+                end
+                prev = cur
+            end
+            if not bestD or prev[#b2] < bestD then best, bestD = cand .. (tostring(k):match("%d+$") or ""), prev[#b2] end
+        end
+        return (bestD and bestD <= 2) and best or nil
+    end
+    for _, file in ipairs(files) do
+        if file == "days" or file:match("/story$") then
+            for section, t in pairs(loaded[file] or {}) do
+                if type(t) == "table" and tostring(section):match("^Day%.%d+$") then
+                    for _, k in ipairs(t.__order or {}) do
+                        if not dayKey(k) then
+                            local near = nearestDayKey(k)
+                            problem(file, section, k, "not a key of a story day" .. (near and (" - did you mean " .. near .. "?") or
+                                " (Like, Advance, Goal, Place, Sync, Owns, Summary, Hunt, Patrol, Season, Weather, Events, <Phase>[Start|After][n], <Phase>Duty)"))
+                        end
+                    end
+                end
+            end
+        end
+    end
     -- (lines.ini: whom the dialogue is for - a role the game has no filler lines for does nothing, silently; a murmur's
     -- S:<role> needs a cat in [Cast] - library exercise 2026-11-02)
     local okL, Lines = pcall(require, "lines")
