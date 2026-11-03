@@ -242,7 +242,10 @@ local castRetrying = false
 function Events.BindRole(key, cat)
     if type(cat) ~= "string" then cat = cat and (cat:GetFullName():gsub("^%S+ ", "")) end
     bound[key] = cat
-    log("events: role %s = %s", key, tostring(cat))
+    -- (the cat's name in the log - the object path told a writer nothing)
+    local who = cat
+    pcall(function() who = WaCa.CatName(StaticFindObject(cat)) or cat end)
+    log("events: role %s = %s", key, tostring(who))
     WaCa.Emit("RoleBound", key, cat)
     -- (every bound role for other mods - WaCa Cutscenes casts S:<role> from it)
     WaCa.Publish("roles.cast", bound, true)
