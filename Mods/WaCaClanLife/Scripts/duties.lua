@@ -1903,6 +1903,88 @@ end
 -- where the cat is - in / out of the camp, a patrol point / the teacher / the guard spot reached: asked at the cat's
 -- own footsteps (every StepEvery-th - walking is what changes it) and at sense pulses. The trigger boxes report the
 -- same where they work (VM 2026-10-28: a box spawned at the camp reported nothing for teleports - the steps carry it).
+-- AN EVENT AT A PLACE (library pre-work 2026-11-03: a story could start a scene at a time of day, never "when your cat
+-- reaches the border"): clanevents.ini When = Reach:<place> - a place of WaCa Cutscenes' places.ini (a pack's too:
+-- [Place.<Name>] At = x y z - "Reach: ReedBank" or "Reach: Place.ReedBank"), Pile, or "x y z" - and Radius (cm, 800).
+-- It plays when your cat comes within the radius (checked on your cat's own steps), on the event's days, by its Chance /
+-- Require / the story's lever, once a day (Once = 1: once a save); never over a menu, a cutscene or another of them.
+local reachState = { inside = {}, doneDay = {}, running = false, places = nil }
+local function reachPlace(spec)
+    spec = tostring(spec or ""):match("^%s*(.-)%s*$")
+    local x, y, z = spec:match("^(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)$")
+    if x then return { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) } end
+    if spec == "Pile" then
+        local pile = pileComponent()
+        local owner = pile and WaCa.Live(pile:GetOwner())
+        return owner and owner:K2_GetActorLocation() or nil
+    end
+    if not reachState.places then
+        reachState.places = {}
+        pcall(function()
+            local modsDir = reachState.modsDir
+            local ini = WaCa.ReadContent(modsDir .. "/WaCaCutscenes/config/places.ini", "places") or {}
+            for section, sec in pairs(ini) do
+                local name = type(sec) == "table" and tostring(section):match("^Place%.(.+)$")
+                local px, py, pz = tostring(sec.At or ""):match("^%s*(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)")
+                if name and px then reachState.places[name] = { X = tonumber(px), Y = tonumber(py), Z = tonumber(pz) } end
+            end
+        end)
+    end
+    return reachState.places[(spec:gsub("^Place%.", ""))]
+end
+local function reachCheck(pawn)
+    if reachState.running then return end
+    local at
+    for _, e in ipairs(cfg.clanEvents) do
+        local spec = tostring(e.when or ""):match("^Reach:%s*(.+)$")
+        if spec then
+            local place = reachPlace(spec)
+            if not place and not e.warned then
+                e.warned = true
+                log("duties: event %s - no place '%s' (places.ini [Place.<Name>], Pile, or x y z)", e.name, spec)
+            end
+            if place then
+                at = at or pawn:K2_GetActorLocation()
+                local d = math.sqrt((at.X - place.X) ^ 2 + (at.Y - place.Y) ^ 2)
+                local inside = d <= e.radius
+                local was = reachState.inside[e.name]
+                reachState.inside[e.name] = inside
+                if inside and not was then
+                    local day = today and today.day or (DayNight and DayNight.Day and DayNight.Day()) or 1
+                    local dayOk = (not e.day or day >= e.day) and (not e.every or (day - (e.day or 1)) % e.every == 0)
+                        and (not e.only or day == e.only)
+                    local why
+                    if not dayOk then why = "not its day"
+                    elseif e.once and eventsDone[e.name] then why = "done (Once)"
+                    elseif reachState.doneDay[e.name] == day then why = "done today"
+                    elseif not Events.Check(e.require) then why = "its Require doesn't hold"
+                    elseif WaCa.InMenu() then why = "a menu is open"
+                    else
+                        local c = WaCa.Latest and WaCa.Latest("cutscene")
+                        if type(c) == "table" and c.playing then why = "a cutscene plays" end
+                    end
+                    local lever = 0
+                    if not why then
+                        lever = eventLever(e)
+                        if lever <= -1 then why = "the story's lever says no"
+                        elseif lever < 1 and math.random() * 100 >= e.chance then why = "its chance (" .. e.chance .. "%)" end
+                    end
+                    if why then
+                        log("duties: you reached %s (%.0f m) - event %s not now: %s", spec, d / 100, e.name, why)
+                    else
+                        log("duties: you reached %s (%.0f m) - event %s", spec, d / 100, e.name)
+                        reachState.doneDay[e.name] = day
+                        if e.once then eventsDone[e.name] = true end
+                        reachState.running = true
+                        Events.Run(e.steps, function() reachState.running = false end)
+                        return
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function where()
     local p = playerPos()
     if not p then return end
@@ -2200,6 +2282,7 @@ function Duties.Init(c)
                  report = tk2.Report or "Good work. The clan is better for it - rest a while.",
                  busy = tk2.Busy or "Shouldn't you be out on your {TASKNAME}? The clan is counting on you." }
     -- the clan's events (clanevents.ini)
+    reachState.modsDir = c.modDir:match("^(.*)[/\\][^/\\]+$") or c.modDir
     local ev = WaCa.ReadContent(c.modDir .. "/config/clanevents.ini", "clanevents") or {}
     for section, sec in pairs(ev) do
         local name = section:match("^Event%.(.+)$")
@@ -2207,7 +2290,7 @@ function Duties.Init(c)
             table.insert(cfg.clanEvents, { name = name, when = sec.When, chance = tonumber(sec.Chance or "") or 100,
                 day = tonumber(sec.Day or ""), every = tonumber(sec.Every or ""), only = tonumber(sec.OnlyDay or ""),
                 once = (sec.Once or "0") == "1", require = sec.Require, order = tonumber(sec.Order or ""),
-                steps = Events.Lines(sec, "Step") })
+                radius = tonumber(sec.Radius or "") or 800, steps = Events.Lines(sec, "Step") })
         end
     end
     table.sort(cfg.clanEvents, function(a, b) return a.name < b.name end)
@@ -2385,6 +2468,7 @@ function Duties.Init(c)
         end
         steps = steps + 1
         if steps % cfg.stepEvery == 0 then where() end
+        pcall(reachCheck, pc().Pawn)
     end)
     WaCa.On("HuntCaught", function()
         local t = today and today.task
