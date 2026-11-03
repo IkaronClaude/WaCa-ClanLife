@@ -164,10 +164,16 @@ local function setUp(why)
         log("days: %s day %d holds: %s%s", pk.name, pk.day, #keys > 0 and table.concat(keys, ", ") or "no beats",
             getIn(pk.days, pk.day, "Sync") and (" - the sync point " .. getIn(pk.days, pk.day, "Sync")) or "")
         -- (ON THE HUD: a story day's Goal = <text> shows as the story's own panel - its name and the goal - until a day
-        -- without one; WaCa Core draws it with the others. The game's quest list itself: not yet)
+        -- without one; WaCa Core draws it with the others. AND IN THE PAUSE MENU'S QUEST TAB (tickets.md 25): the story
+        -- as a side-quest line, display only, its goal and Place = <text> (optional) on the detail panel)
+        local goal = getIn(pk.days, pk.day, "Goal")
+        local place = getIn(pk.days, pk.day, "Place")
         if WaCa.HudPanel then
-            local goal = getIn(pk.days, pk.day, "Goal")
             pcall(WaCa.HudPanel, "WaCaClanLife.story." .. pk.mod, goal and { title = pk.name, activity = goal, order = 60 } or nil)
+        end
+        if WaCa.QuestLine then
+            pcall(WaCa.QuestLine, "WaCaClanLife.story." .. pk.mod,
+                goal and { title = pk.name, activity = goal, location = place, order = pk.priority } or nil)
         end
     end
 end
@@ -315,6 +321,19 @@ function Days.Init(c)
     -- (other mods - a story mod, a test - move the story: WaCa.Emit("SetStoryDay", n); kept with the save as any day)
     WaCa.On("SetStoryDay", function(n)
         if tonumber(n) then Days.SetStory(math.floor(tonumber(n)), "asked for (SetStoryDay)") end
+    end)
+    -- (and a pack's own story: WaCa.Emit("SetPackDay", "<the pack's mod folder>", n) - library exercise 2026-11-03: a
+    -- pack's day could only move by its Advance rules, a test or a story mod couldn't put it on a day)
+    WaCa.On("SetPackDay", function(mod, n)
+        for _, pk in ipairs(packs) do
+            if pk.mod == tostring(mod) and tonumber(n) then
+                pk.day, pk.seen = math.max(1, math.floor(tonumber(n))), {}
+                log("days: %s day %d (asked for - SetPackDay)", pk.name, pk.day)
+                setUp("SetPackDay")
+                return
+            end
+        end
+        log("days: SetPackDay - no story pack '%s'", tostring(mod))
     end)
     -- (registered before duties / weather react to the same DayStarted - main.lua inits days first)
     WaCa.On("DayStarted", function()

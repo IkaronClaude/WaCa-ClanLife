@@ -200,7 +200,8 @@ task from the main story - your own duty from `duties.ini` too. When two packs o
 lower Priority wins and the log names the conflict.
 
 `Goal = <text>` on a day puts your story on the HUD that day - a panel with its Name and the goal, under the clan's
-day (gone on a day without one).
+day (gone on a day without one). The same day it is a line in the pause menu's QUEST tab (SIDE QUESTS): the mouse
+over it shows the goal on the detail panel, with `Place = <text>` (optional) under the story's name.
 
 Not built yet: holding the game's own quests at a sync point.
 
