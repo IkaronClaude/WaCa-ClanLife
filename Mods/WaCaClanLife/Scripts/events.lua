@@ -96,13 +96,22 @@ end
 
 -- A CHOICE (library exercise 2026-11-02: a story couldn't ask the player anything - every branch was chance or a
 -- variable set elsewhere): Choice: <variable> = <question>; <answer 1>; <answer 2> [; <answer 3>; <answer 4>] - the
--- question and its numbered answers on the game's centre card until one is picked with the number keys 1-4; the
--- variable gets the number (kept with the save like any story variable), the scene goes on (If: Shelter = 1 ...).
--- Keys only for now (the look of a choice is the operator's call - a menu of the game's own would be the next step).
+-- question and its answers until one is picked; the variable gets the answer's number (kept with the save like any
+-- story variable), the scene goes on (If: Shelter = 1 ...). A question "Name: ..." (one word before the colon) puts
+-- Name on the speaker's plate.
+-- THE GAME'S ANSWER MENU (operator 2026-11-03: "Game's answer menu"): the quest dialogue screen
+-- (WBP_QuestGiver_Dialogue - its paragraph, speaker plate, answer buttons 1-4), made and filled by us. Its buttons
+-- don't answer our input by themselves (VM: no hover / key / click reached them - the screen's own logic wants a
+-- quest dialogue node), so the choosing is ours: Up / Down + Enter / Space, the number keys, the mouse (hover picks,
+-- a click answers - WaCa.MouseOver on the drawn buttons); the game's own highlight (CanvasSelected) shows the pick.
+-- The game shows the mouse cursor for it on its own (it is a screen). The centre card is the fallback.
 local NUMBER_KEYS = { One = 1, Two = 2, Three = 3, Four = 4, NumPadOne = 1, NumPadTwo = 2, NumPadThree = 3, NumPadFour = 4,
                       -- (a gamepad's face buttons: bottom 1, right 2, left 3, top 4 - untested, the VM has no gamepad)
                       Gamepad_FaceButton_Bottom = 1, Gamepad_FaceButton_Right = 2, Gamepad_FaceButton_Left = 3,
                       Gamepad_FaceButton_Top = 4 }
+local DIALOGUE = "/Game/Art/UXD/Blueprints/QuestDialogs/WBP_QuestGiver_Dialogue.WBP_QuestGiver_Dialogue_C"
+local MOVE_KEYS = { Up = -1, Down = 1, Gamepad_DPad_Up = -1, Gamepad_DPad_Down = 1 }
+local PICK_KEYS = { Enter = true, SpaceBar = true, LeftMouseButton = true }
 local pendingChoice
 -- (A RELOAD MID-CHOICE - VM 2026-11-02: the card stayed on screen for good and the keys did nothing; the scene it was
 -- in can't go on after a reload. The card's widget is kept in Saved/WaCaSceneChoice.ini while it is up; Clan Life
@@ -131,19 +140,74 @@ local function askChoice(value, done)
         log("events: Choice needs <variable> = <question>; <answer>; <answer> - got '%s'", tostring(value))
         return done()
     end
-    local lines = { parts[1] }
-    for i = 2, math.min(#parts, 5) do lines[#lines + 1] = string.format("%d - %s", i - 1, parts[i]) end
-    local w
-    pcall(function()
+    local n = math.min(#parts, 5) - 1
+    local speaker, question = parts[1]:match("^(%a[%w']*):%s+(.+)$")
+    if not speaker then question = parts[1] end
+    local w, menu
+    local made, err = pcall(function()
         local controller = pc()
-        w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, WaCa.LoadAsset(CARD), controller)
+        w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, WaCa.LoadAsset(DIALOGUE), controller)
         w:AddToViewport(60)
-        w.mcGuiTextInfo:SetText(FText(table.concat(lines, "\n")))
+        w.mcGuiTextParagraph:SetText(FText(question))
+        w.mcGuiTextParagraph:SetVisibility(4)
+        w.mcGuiDialogueTalker.mcGuiTextName:SetText(FText(speaker or ""))
+        w.mcGuiDialogueTalker:SetVisibility(speaker and 4 or 1)
+        pcall(function() w.mcGuiNext:SetVisibility(1) end)
+        -- (the panel's big ring vignette darkened the whole screen without the game's own intro to set it: VM)
+        pcall(function() w.mcGuiBaseVfx:SetVisibility(2) end)
+        w.CanvasPanelDialog:SetVisibility(4)
+        for i = 1, 4 do
+            local b = w["mcButton" .. i]
+            if i <= n then
+                for _, t in ipairs({ "mcGuiTextNormal", "mcGuiTextSelected", "mcGuiTextOver" }) do
+                    pcall(function() b[t]:SetText(FText(parts[i + 1])) end)
+                end
+                pcall(function() b.mcGuiTraitIcon:SetVisibility(1) end)
+                b:SetVisibility(4)
+            else
+                b:SetVisibility(1)
+            end
+        end
+        w:SetVisibility(3)
+        menu = true
     end)
-    pendingChoice = { var = var, n = math.min(#parts, 5) - 1, widget = w and (w:GetFullName():gsub("^%S+ ", "")), done = done,
-                      answers = parts }
+    if not made then
+        -- (the card, as before: the question and numbered answers - the keys 1-4)
+        log("events: Choice %s - the game's answer menu failed (%s), the card instead", var, tostring(err))
+        pcall(function() if WaCa.Live(w) then w:RemoveFromParent() end end)
+        local lines = { parts[1] }
+        for i = 2, n + 1 do lines[#lines + 1] = string.format("%d - %s", i - 1, parts[i]) end
+        w = nil
+        pcall(function()
+            local controller = pc()
+            w = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):Create(controller, WaCa.LoadAsset(CARD), controller)
+            w:AddToViewport(60)
+            w.mcGuiTextInfo:SetText(FText(table.concat(lines, "\n")))
+        end)
+    end
+    pendingChoice = { var = var, n = n, widget = w and (w:GetFullName():gsub("^%S+ ", "")), done = done,
+                      answers = parts, menu = menu, pick = 1 }
     keepChoice(var, pendingChoice.widget)
-    log("events: Choice %s - %s (keys 1-%d)", var, parts[1], pendingChoice.n)
+    log("events: Choice %s - %s (%d answers: %s)", var, parts[1], n, menu and "the game's answer menu" or "the card, keys 1-n")
+    if menu then
+        local mine = pendingChoice
+        Events.ChoiceSelect(1)
+        -- (the mouse: hovering an answer picks it - polled, the buttons take no hover of their own here)
+        local function hover()
+            if pendingChoice ~= mine then return end
+            local card = WaCa.Live(mine.widget and StaticFindObject(mine.widget))
+            if not card then return end
+            for i = 1, mine.n do
+                local over = false
+                pcall(function() over = WaCa.MouseOver(card["mcButton" .. i]) end)
+                if over then mine.hovered = i if mine.pick ~= i then Events.ChoiceSelect(i) end break end
+                if i == mine.n then mine.hovered = nil end
+            end
+            ExecuteInGameThreadWithDelay(100, function() pcall(hover) end)
+        end
+        pcall(hover)
+        return
+    end
     -- (FITS THE SCREEN - four long answers ran off its foot, VM 2026-11-02: the card's text starts ~44% down and grows
     -- downward, ~ChoiceRoom HUD units free below it (of 2160). Its height is only known after a few drawn frames - the
     -- VM's measure lagged by seconds - so it is measured again every second while the choice is up, and the text
@@ -167,9 +231,31 @@ local function askChoice(value, done)
     end
     pcall(fit)
 end
+-- the answer picked now on the game's answer menu: its highlight (the game's own CanvasSelected) on that one only
+function Events.ChoiceSelect(i)
+    local c = pendingChoice
+    if not (c and c.menu and i >= 1 and i <= c.n) then return end
+    c.pick = i
+    local card = WaCa.Live(c.widget and StaticFindObject(c.widget))
+    if not card then return end
+    for k = 1, c.n do
+        pcall(function() card["mcButton" .. k].CanvasSelected:SetVisibility(k == i and 4 or 2) end)
+    end
+    log("events: Choice %s - on %d (%s)", c.var, i, c.answers[i + 1])
+end
 local function answerChoice(key)
     local c = pendingChoice
-    local n = c and NUMBER_KEYS[tostring(key)]
+    if not c then return end
+    key = tostring(key)
+    local n = NUMBER_KEYS[key]
+    if c.menu and MOVE_KEYS[key] then
+        Events.ChoiceSelect((c.pick - 1 + MOVE_KEYS[key]) % c.n + 1)
+        return
+    end
+    if c.menu and PICK_KEYS[key] then
+        -- (a click answers only over an answer - not anywhere on the screen)
+        if key == "LeftMouseButton" then n = c.hovered else n = c.pick end
+    end
     if not (n and n <= c.n) then return end
     pendingChoice = nil
     keepChoice(nil, nil)

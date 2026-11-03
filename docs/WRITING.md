@@ -72,7 +72,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Skip: <days or a skip's name>` | time passes on purpose: the world fades, a card says what changed; a skip of your own is `[Skip.<Name>]` in your pack's `timeskip.ini` - `Days`, `Pile` (the fresh-kill pile's value after it), `Card`. The day's hunt / patrol is set aside (not missed); a skip runs no duties - the story check warns about any you put on one |
 | `Newcomer: <clanmate>` | a new cat joins the clan, taking after that clanmate (8c) |
 | `Activity: <name> @ <who>` | that cat does one of `activities.ini`'s activities now (Sit, Nap, Sniff ...) - your cat can join it with the Join key |
-| `Choice: <variable> = <question>; <answer 1>; <answer 2> ...` | the player picks an answer (number keys 1-4, up to four answers); the variable gets its number - then `If: <variable> = 1` ... |
+| `Choice: <variable> = <question>; <answer 1>; <answer 2> ...` | the player picks an answer on the game's own answer menu (the quest dialogue's: up to four answers - the mouse, Up / Down + Enter, or the number keys); `<question>` as `Name: ...` puts Name on the speaker's plate; the variable gets the answer's number - then `If: <variable> = 1` ... |
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
 | `Pose: <pose> @ <who>` | a cat plays a pose (Sit, Growl, Hiss, Sniff ...) |
 | `Emit: <event>` | sends an event other mods (or your own `When = Event:`) hear; `Emit: <event> = <value>` sends a value with it (`Emit: SetSpecialisation = Herbalist` - WaCa Hunting gives your cat that role for this save) |
