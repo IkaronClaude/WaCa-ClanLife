@@ -11,7 +11,7 @@ local WaCa, log, Events
 local modDir
 
 -- the scene runner's step kinds (events.lua's Run)
-local KINDS = { Add = true, Bond = true, Card = true, Activity = true, Newcomer = true, Choice = true, Cutscene = true, Else = true, EndIf = true, Dialogue = true, Emit = true, Fade = true,
+local KINDS = { Add = true, Bond = true, Card = true, Activity = true, Newcomer = true, Skip = true, Choice = true, Cutscene = true, Else = true, EndIf = true, Dialogue = true, Emit = true, Fade = true,
                 FadeIn = true, Freeze = true, Gather = true, Groups = true, Hook = true, If = true, Lead = true, Pair = true,
                 Part = true, Party = true, Pose = true, Release = true, Set = true, Wait = true }
 -- (which keys of which files are scene steps / conditions)
@@ -242,6 +242,20 @@ function StoryCheck.Run()
                         if ask then choiceShape("cutscenes", section, k, ask) end
                         local name = action:match("^Set:%s*([%w%.%_]+)") or action:match("^Ask:%s*([%w%.%_]+)")
                         if name then set[name] = true end
+                    end
+                end
+            end
+        end
+    end)
+    -- (a time skip's definition with duties on it: they don't run - the skip sets the hunt / patrol aside; operator
+    -- 2026-11-03: "we should warn if a mod puts duties on a time-skip event")
+    pcall(function()
+        local ts = WaCa.ReadContent(modDir .. "/config/timeskip.ini", "timeskip") or {}
+        for section, t in pairs(ts) do
+            if type(t) == "table" and tostring(section):match("^Skip%.") then
+                for _, k in ipairs(t.__order or {}) do
+                    if k:match("Duty") or k:match("Duties") or k == "Hunt" or k == "Patrol" then
+                        warning("timeskip", section, k, "a time skip runs no duties - the day's hunt / patrol is set aside when time skips")
                     end
                 end
             end

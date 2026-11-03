@@ -1748,6 +1748,10 @@ local function runStep(s, ctx, nextStep, stop, jump)
     elseif k == "Pose" then
         Events.Pose(s.value, s.who, ctx)
         nextStep()
+    elseif k == "Skip" then
+        -- (Skip: <days or a [Skip.<Name>] of timeskip.ini> - time passes on purpose: the card, the season / pile ...)
+        WaCa.Emit("SkipDays", s.value)
+        nextStep()
     elseif k == "Newcomer" then
         -- (Newcomer: <clanmate> - a new cat joins the clan, taking after that clanmate - kits.lua)
         WaCa.Emit("Newcomer", s.value)

@@ -8,6 +8,11 @@ local TimeSkip = {}
 local WaCa, log, DayNight, Weather
 local cfg = { on = false, key = nil, days = 1, hour = nil, seconds = 6, title = "", fade = 1.5, summary = true }
 local before                      -- the world before a skip: { season, weather, story, packs = { name -> day } }
+-- DEFINED SKIPS (operator 2026-11-03): timeskip.ini / a pack's content/timeskip.ini [Skip.<Name>] Days, Pile (the
+-- fresh-kill pile's value after it), Card (its own text) - played with WaCa.Emit("SkipDays", "<Name>") or the scene
+-- step Skip: <Name>; a number = that many days. Duties put on a skip are not run - the story check warns.
+local skips = {}
+local pendingDef
 
 local function pc()
     for _, c in ipairs(FindAllOf("SwtPlayerController") or {}) do
@@ -60,6 +65,8 @@ end
 -- skip `days` days (the new day starts at WakeHour)
 function TimeSkip.Skip(days)
     before = snapshot()
+    -- (the day's basic hunt / patrol set aside - not missed: operator 2026-11-03)
+    pcall(function() require("duties").SkipBasic("time skips ahead") end)
     if DayNight.Skip(days, cfg.hour) then return true end
     before = nil
     log("timeskip: no day / night cycle (daynight.ini On = 0) - nothing to skip")
@@ -82,8 +89,27 @@ function TimeSkip.Init(c)
     log("timeskip: %s (rest key %s: %d day(s))", cfg.on and "on" or "off", tostring(cfg.key), cfg.days)
     if not cfg.on then return end
     -- (other mods skip time the same way - their Lua isn't this one: WaCa.Emit("SkipDays", n))
+    local cs = WaCa.ReadContent(c.modDir .. "/config/timeskip.ini", "timeskip") or {}
+    for section, sec in pairs(cs) do
+        local name = type(sec) == "table" and tostring(section):match("^Skip%.(.+)$")
+        if name and tonumber(sec.Days or "") then
+            skips[name] = { name = name, days = math.max(1, math.floor(tonumber(sec.Days))), pile = tonumber(sec.Pile or ""),
+                            card = (sec.Card or "") ~= "" and sec.Card or nil }
+        end
+    end
     WaCa.On("SkipDays", function(n)
-        if tonumber(n) and tonumber(n) >= 1 then ExecuteInGameThread(function() TimeSkip.Skip(math.floor(tonumber(n))) end) end
+        ExecuteInGameThread(function()
+            local def = skips[tostring(n)]
+            if def then
+                pendingDef = def
+                log("timeskip: the skip %s - %d day(s)%s", def.name, def.days, def.pile and (", the pile to " .. def.pile) or "")
+                TimeSkip.Skip(def.days)
+            elseif tonumber(n) and tonumber(n) >= 1 then
+                TimeSkip.Skip(math.floor(tonumber(n)))
+            else
+                log("timeskip: no skip '%s' (timeskip.ini [Skip.<Name>], or a number of days)", tostring(n))
+            end
+        end)
     end)
     local pending
     WaCa.On("TimeSkipped", function(days, from, to)
@@ -95,7 +121,14 @@ function TimeSkip.Init(c)
             pending = nil
             local lines = cfg.summary and happened(before, snapshot()) or {}
             before = nil
-            local title = fill(cfg.title, p[1], p[2], p[3])
+            local def = pendingDef
+            pendingDef = nil
+            if def and def.pile then
+                local ok, v = pcall(function() return require("duties").SetPile(def.pile) end)
+                if ok and v then lines[#lines + 1] = string.format("The fresh-kill pile: %d.", math.floor(v + 0.5)) end
+                log("timeskip: %s - the fresh-kill pile set to %s%s", def.name, tostring(def.pile), (ok and v) and "" or " - FAILED")
+            end
+            local title = fill(def and def.card or cfg.title, p[1], p[2], p[3])
             log("timeskip: %s%s", title, #lines > 0 and (" - " .. table.concat(lines, " ")) or "")
             if cfg.fade <= 0 then
                 showCard(title .. (#lines > 0 and ("\n" .. table.concat(lines, "\n")) or ""))

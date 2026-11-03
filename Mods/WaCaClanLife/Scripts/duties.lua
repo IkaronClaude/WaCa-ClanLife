@@ -1797,13 +1797,42 @@ startThird = function(i, why)
     end, context())
 end
 
+-- A TIME SKIP SKIPS THE BASIC DUTIES (operator 2026-11-03: "the super basic 'go hunt' or 'go patrol' should be skipped
+-- when it happens"): the day's hunt / patrol not done yet is set aside - neither done nor missed at the verdict
+function Duties.SkipBasic(why)
+    if not today then return 0 end
+    local n = 0
+    for _, t in ipairs(today.record or {}) do
+        if not t.done and not t.skipped and (t.kind == "Hunt" or t.kind == "Patrol") then
+            t.skipped = true
+            pcall(cleanup, t)
+            n = n + 1
+            log("duties: day %d - the %s set aside (%s)", today.day, t.kind:lower(), why or "time passes")
+        end
+    end
+    return n
+end
+
+-- the clan's fresh-kill pile now, or nil (the game's own value - adding 0 returns it)
+function Duties.PileValue()
+    local pile = pileComponent()
+    return pile and WaCaNative_AddResource and WaCaNative_AddResource(pile:GetAddress(), 0) or nil
+end
+-- the pile set to a value (a time skip's Pile = ...): the difference added the game's way - the new value, or nil
+function Duties.SetPile(value)
+    local pile = pileComponent()
+    local now = Duties.PileValue()
+    if not (pile and now and tonumber(value)) then return nil end
+    return WaCaNative_AddResource(pile:GetAddress(), tonumber(value) - now)
+end
+
 -- the day's end (the morning after, or a rest): the tasks done raise standing, missed ones lower it
 local function verdict()
     if not today then return end
     local done, missed, bonus = 0, 0, 0
     for _, t in ipairs(today.record) do
         cleanup(t)
-        if COUNTED[t.kind] then
+        if COUNTED[t.kind] and not t.skipped then
             if t.done then
                 done = done + 1
                 if t.kind == "NightWatch" then bonus = bonus + cfg.watchStanding end
