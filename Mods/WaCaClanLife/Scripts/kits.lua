@@ -188,6 +188,19 @@ local function restore()
         end
         i = i + 1
     end
+    -- (kits born before BlendLooks set Role = Kit carry their parent's rank in the look: set right - the next save keeps
+    -- it; 2026-11-03)
+    for _, kit in ipairs(kits) do
+        if not kit.adult then
+            local want = kit.grown and "Apprentice" or "Kit"
+            local have = tostring(kit.look):match("Role=(%w+)")
+            if have and have ~= want then
+                kit.look = kit.look:gsub("Role=%w+", "Role=" .. want)
+                kit.role = nil
+                log("kits: %s's look said %s - %s now", kit.name, have, want)
+            end
+        end
+    end
     if #kits > 0 then log("kits: %d of your own in this save", #kits) end
 end
 
