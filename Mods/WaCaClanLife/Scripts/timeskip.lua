@@ -6,7 +6,8 @@
 local TimeSkip = {}
 
 local WaCa, log, DayNight, Weather
-local cfg = { on = false, key = nil, days = 1, hour = nil, seconds = 6, title = "" }
+local cfg = { on = false, key = nil, days = 1, hour = nil, seconds = 6, title = "", fade = 1.5, summary = true }
+local before                      -- the world before a skip: { season, weather, story, packs = { name -> day } }
 
 local function pc()
     for _, c in ipairs(FindAllOf("SwtPlayerController") or {}) do
@@ -29,9 +30,38 @@ local function showCard(text)
     require("events").Card(text, cfg.seconds)
 end
 
+-- WHAT HAPPENED (tickets.md 20, 2026-11-03 - "with what happened in it"): what the skip actually changed - the season,
+-- the weather, how far the main story and each pack's own story moved. Only what changed; nothing made up (eating
+-- from the pile, duties resolved by standing: rules the operator hasn't set).
+local function snapshot()
+    local okD, Days = pcall(require, "days")
+    local s = { season = Weather and Weather.Season() or nil, weather = Weather and Weather.Current() or nil, packs = {} }
+    if okD and Days.IsOn and Days.IsOn() then
+        s.story = Days.Story()
+        for _, pk in ipairs(Days.Packs and Days.Packs() or {}) do s.packs[pk.name] = pk.day end
+    end
+    return s
+end
+local function happened(was, now)
+    local out = {}
+    if was and now.season and was.season ~= now.season then out[#out + 1] = string.format("%s has come.", now.season) end
+    if was and now.weather and was.weather ~= now.weather then
+        out[#out + 1] = string.format("The weather turned: %s.", now.weather:lower())
+    end
+    if was and now.story and was.story and now.story ~= was.story then
+        out[#out + 1] = string.format("The clan's story moved on (day %d).", now.story)
+    end
+    for name, day in pairs(now.packs) do
+        if was and was.packs[name] and was.packs[name] ~= day then out[#out + 1] = string.format("%s: day %d.", name, day) end
+    end
+    return out
+end
+
 -- skip `days` days (the new day starts at WakeHour)
 function TimeSkip.Skip(days)
+    before = snapshot()
     if DayNight.Skip(days, cfg.hour) then return true end
+    before = nil
     log("timeskip: no day / night cycle (daynight.ini On = 0) - nothing to skip")
     return false
 end
@@ -47,8 +77,14 @@ function TimeSkip.Init(c)
     cfg.hour = tonumber(t.WakeHour or "")
     cfg.seconds = tonumber(t.CardSeconds or "") or cfg.seconds
     cfg.title = t.Card or "{DAYS} passes. It is {SEASON}."
+    cfg.fade = tonumber(t.Fade or "") or cfg.fade
+    cfg.summary = (t.Summary or "1") ~= "0"
     log("timeskip: %s (rest key %s: %d day(s))", cfg.on and "on" or "off", tostring(cfg.key), cfg.days)
     if not cfg.on then return end
+    -- (other mods skip time the same way - their Lua isn't this one: WaCa.Emit("SkipDays", n))
+    WaCa.On("SkipDays", function(n)
+        if tonumber(n) and tonumber(n) >= 1 then ExecuteInGameThread(function() TimeSkip.Skip(math.floor(tonumber(n))) end) end
+    end)
     local pending
     WaCa.On("TimeSkipped", function(days, from, to)
         -- the card after the season / weather moved on (they react to DayStarted, emitted right after this)
@@ -57,7 +93,20 @@ function TimeSkip.Init(c)
             if not pending then return end
             local p = pending
             pending = nil
-            showCard(fill(cfg.title, p[1], p[2], p[3]))
+            local lines = cfg.summary and happened(before, snapshot()) or {}
+            before = nil
+            local title = fill(cfg.title, p[1], p[2], p[3])
+            log("timeskip: %s%s", title, #lines > 0 and (" - " .. table.concat(lines, " ")) or "")
+            if cfg.fade <= 0 then
+                showCard(title .. (#lines > 0 and ("\n" .. table.concat(lines, "\n")) or ""))
+                return
+            end
+            -- (THE CARD AS A SCENE: the world fades to black, the card - and what happened - over it, the world back;
+            -- the steps of events.lua, so other scenes wait their turn)
+            local steps = { { kind = "Fade", value = tostring(cfg.fade) }, { kind = "Card", value = title } }
+            if #lines > 0 then steps[#steps + 1] = { kind = "Card", value = table.concat(lines, "\n") } end
+            steps[#steps + 1] = { kind = "FadeIn", value = tostring(cfg.fade) }
+            require("events").Run(steps)
         end)
     end)
     if cfg.key then
