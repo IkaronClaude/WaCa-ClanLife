@@ -100,10 +100,14 @@ local function place()
         end)
     end
     for i, kit in ipairs(kits) do
+        -- (a newcomer kept before plates had a rank line: the clanmate's plate's now)
+        if kit.adult and not kit.role and kit.like and WaCa.PlateRole then kit.role = WaCa.PlateRole(kit.like) end
         if not spawned[kit.name] and standing[kit.name] then
             -- (one kept; copies more reloads left behind - before this was fixed each one spawned the kits again - go)
             local list = standing[kit.name]
             spawned[kit.name] = list[1]
+            -- (its plate again: a reload of Core / Clan Life takes the widget's owner script with it)
+            pcall(WaCa.Nameplate, StaticFindObject(list[1]), kit.name, kit.role)
             for j = 2, #list do
                 local extra = StaticFindObject(list[j])
                 if extra and extra:IsValid() then WaCa.Despawn(extra) end
@@ -119,6 +123,7 @@ local function place()
             local x, y = mid.X + math.cos(ang) * cfg.newcomerRing, mid.Y + math.sin(ang) * cfg.newcomerRing
             local cat = WaCa.SpawnCat(kit.look, { X = x, Y = y, Z = groundUnder(x, y, mid.Z) }, math.deg(ang) + 180, 1.0)
             if cat then
+                pcall(WaCa.Nameplate, cat, kit.name, kit.role)
                 spawned[kit.name] = pathOf(cat)
                 placed[#placed + 1] = kit.name
             end
@@ -133,6 +138,7 @@ local function place()
             local scale = kit.grown and cfg.apprenticeScale or select(3, WaCa.BlendLooks(kit.look, kit.look))
             local cat = WaCa.SpawnCat(kit.look, { X = x, Y = y, Z = z }, face + (i - 1) * 25 * side, scale)
             if cat then
+                pcall(WaCa.Nameplate, cat, kit.name, kit.role, 60)
                 spawned[kit.name] = pathOf(cat)
                 placed[#placed + 1] = kit.name
             end
@@ -149,8 +155,8 @@ local function keep()
     for i, kit in ipairs(kits) do
         local key = "Kit" .. i
         data[key] = { Name = kit.name, Mate = kit.mate or "", Born = tostring(kit.born or 0), Grown = kit.grown and "1" or "0",
-                      Adult = kit.adult and "1" or "0", Like = kit.like or "", Look = kit.look,
-                      __order = { "Name", "Mate", "Born", "Grown", "Adult", "Like", "Look" } }
+                      Adult = kit.adult and "1" or "0", Like = kit.like or "", Role = kit.role or "", Look = kit.look,
+                      __order = { "Name", "Mate", "Born", "Grown", "Adult", "Like", "Role", "Look" } }
         data.__order[#data.__order + 1] = key
     end
     WaCa.WriteIni(path, data, "; WaCa Clan Life - this save's own kits (kits.lua)")
@@ -172,7 +178,8 @@ local function restore()
         local k = data["Kit" .. i]
         if (k.Look or "") ~= "" then
             kits[#kits + 1] = { name = k.Name, look = k.Look, mate = k.Mate, born = tonumber(k.Born or "") or 0,
-                                grown = k.Grown == "1", adult = k.Adult == "1", like = (k.Like or "") ~= "" and k.Like or nil }
+                                grown = k.Grown == "1", adult = k.Adult == "1", like = (k.Like or "") ~= "" and k.Like or nil,
+                                role = (k.Role or "") ~= "" and k.Role or nil }
         end
         i = i + 1
     end
@@ -267,7 +274,9 @@ function Kits.Newcomer(like)
         local name = (prefix ~= "" and suffix ~= "") and WaCa.GetText(prefix .. suffix) or ""
         if name ~= "" and name ~= prefix .. suffix and not used[name] then
             local grown = blended:gsub('SuffixNameId="[^"]*"', 'SuffixNameId="' .. suffix .. '"'):gsub("Role=%w+", "Role=" .. role)
-            kits[#kits + 1] = { name = name, look = grown, mate = "", grown = true, adult = true, like = like,
+            -- (the rank line: the clanmate's own plate's - the game's word in the game's language)
+            local plateRole = WaCa.PlateRole and WaCa.PlateRole(like) or nil
+            kits[#kits + 1] = { name = name, look = grown, mate = "", grown = true, adult = true, like = like, role = plateRole,
                                 born = DayNight and DayNight.Day and DayNight.Day() or 0 }
             log("kits: a newcomer joins the clan - %s (%s, taking after %s)", name, role, like)
             place()
