@@ -203,7 +203,19 @@ lower Priority wins and the log names the conflict.
 day (gone on a day without one). The same day it is a line in the pause menu's QUEST tab (SIDE QUESTS): the mouse
 over it shows the goal on the detail panel, with `Place = <text>` (optional) under the story's name.
 
-Not built yet: holding the game's own quests at a sync point.
+The game's own story can't be held at a sync point, so against it the meeting is a warning. Tie a sync point to the
+game's rank-up with a section of its own:
+
+```ini
+[Sync.HerbalistsLessons]
+Main = Rank:Deputy
+; Warning = your own text for the warning card (optional)
+; PackDay = 3 (optional - else the day with Sync = HerbalistsLessons)
+```
+
+When the game's rank-up quest to that rank arrives and your story isn't on that day yet, a card warns the player. If
+they rank up anyway, your story jumps to that day, and a "meanwhile" card shows the `Summary = <text>` of each day it
+skipped (give each day one). Only `Rank:<Rank>` is known for now (Warrior, Deputy, Leader - the game's rank-up quests).
 
 The example pack's `story.ini` is a three-day story whose second day waits for the loner question to be answered.
 

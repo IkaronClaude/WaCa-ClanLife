@@ -16,7 +16,12 @@
 -- the main story's.
 --   SYNC POINTS: a day with Sync = <Name> is a barrier - the story repeats that day until EVERY story that declares a
 --   day with that Sync is on it and ready (its Advance met); then they cross together. No repeat limit: a long wait is
---   the normal case. (Against the game's own quests the barrier can't hold - not built yet.)
+--   the normal case.
+--   AGAINST THE GAME'S OWN STORY (operator 2026-11-03: "Warn"): [Sync.<Name>] Main = Rank:<Rank> in the pack's
+--   story.ini ties its sync point to the game's rank-up to <Rank>. The game's story can't be held, so: when the game's
+--   rank-up quest to that rank comes (the quest HUD adds it) and the pack isn't at its sync day, a WARNING card
+--   ([Sync.<Name>] Warning = <text>, or the default); when the rank-up happens anyway, the pack jumps to its sync day
+--   and the Summary = <text> of each day it skipped is shown ("Meanwhile ..."). PackDay = N overrides the sync day.
 --   Owns = Morning[, Noon, Evening, Night] + <Third>Duty = <duty>: the pack's day takes that third's task.
 --   Goal = <text>: the story's own panel on the HUD that day (its Name and the goal).
 local Days = {}
@@ -27,7 +32,8 @@ local story = 1                    -- the story day the save is on
 local seen = {}                    -- scenes played on this story day (repeats skip them): "Morning1" = true
 local lastJudged                   -- the last DutiesJudged result: { done, missed }
 local restoredFor
-local packs = {}                   -- a pack's own story: { name, mod, priority, days = { [n] = section }, day, seen }
+local packs = {}                   -- a pack's own story: { name, mod, priority, days = { [n] = section }, day, seen,
+                                   --   gameSyncs = { { name, rank, day, warning } }, warned = { [sync name] = true } }
 
 -- a key of story day n of a story's days, following Like chains
 local function getIn(days, n, key, depth)
@@ -271,6 +277,29 @@ local function readPacks(modDir)
                 local num = tonumber(tostring(section):match("^Day%.(%d+)$") or "")
                 if num then pk.days[num] = sec n = n + 1 end
             end
+            -- (its sync points with the game's own story: [Sync.<Name>] Main = Rank:<Rank>)
+            pk.gameSyncs, pk.warned = {}, {}
+            for section, sec in pairs(ini) do
+                local sname = type(sec) == "table" and tostring(section):match("^Sync%.(.+)$")
+                local rank = sname and tostring(sec.Main or ""):match("^%s*Rank:%s*(%a+)%s*$")
+                if rank then
+                    local at = tonumber(sec.PackDay or "")
+                    if not at then
+                        for dn, dsec in pairs(pk.days) do
+                            if type(dsec) == "table" and tostring(dsec.Sync or ""):match("^%s*(.-)%s*$") == sname then at = dn end
+                        end
+                    end
+                    if at then
+                        pk.gameSyncs[#pk.gameSyncs + 1] = { name = sname, rank = rank, day = at,
+                            warning = (sec.Warning or "") ~= "" and sec.Warning or nil }
+                        log("days: %s - its sync point %s (day %d) is the game's rank-up to %s", pk.name, sname, at, rank)
+                    else
+                        log("days: %s - [Sync.%s] Main = Rank:%s: no day with Sync = %s (and no PackDay)", pk.name, sname, rank, sname)
+                    end
+                elseif sname and (sec.Main or "") ~= "" then
+                    log("days: %s - [Sync.%s] Main = %s: only Rank:<Rank> is known against the game's story", pk.name, sname, sec.Main)
+                end
+            end
             packs[#packs + 1] = pk
             log("days: %s's own story '%s' - %d day(s), priority %d", mod, pk.name, n, pk.priority)
         end
@@ -295,6 +324,84 @@ function Days.IsOn() return cfg.on end
 
 local function sidecar() return WaCa.SlotFile("WaCaDays") end
 
+-- the rank a quest of the game's makes your cat: the rank-up task in its quest graph (the game's procedural rank-up
+-- quests - QuestGraphProcedural_RankUp ... - hold a QuestObjectiveRankUpTask with the rank), or nil
+local rankNames
+local function rankNameOf(v)
+    if not rankNames then
+        rankNames = {}
+        pcall(function()
+            StaticFindObject("/Script/SwtQuest.ECharacterRank"):ForEachName(function(n, val) rankNames[val] = n:ToString():gsub("^.*::", "") end)
+        end)
+    end
+    return rankNames[v]
+end
+local function questRank(quest)
+    local graph = WaCa.Live(quest) and WaCa.Live(quest.QuestGraph)
+    if not graph then return nil end
+    local graphName = graph:GetFullName()
+    for _, t in ipairs(FindAllOf("QuestObjectiveRankUpTask") or {}) do
+        local found
+        pcall(function()
+            local o = t
+            for _ = 1, 8 do
+                o = o:GetOuter()
+                if not (o and o:IsValid()) then return end
+                if o:GetFullName() == graphName then found = rankNameOf(t.Rank) return end
+            end
+        end)
+        if found then return found end
+    end
+    return nil
+end
+
+-- the game's rank-up to <rank> is coming: a pack behind its sync point for it is warned (once a session)
+local function warnGameSync(rank)
+    for _, pk in ipairs(packs) do
+        for _, gs in ipairs(pk.gameSyncs or {}) do
+            if gs.rank == rank and pk.day < gs.day and not pk.warned[gs.name] then
+                pk.warned[gs.name] = true
+                local text = gs.warning or string.format(
+                    "%s: you will soon be made %s - and this story isn't there yet. When you are, it moves on without you.",
+                    pk.name, rank)
+                log("days: %s - the game's rank-up to %s is coming, the story is on day %d of %d (sync %s): warned",
+                    pk.name, rank, pk.day, gs.day, gs.name)
+                if Events then Events.Card(text) end
+            end
+        end
+    end
+end
+
+-- the game's story moved on (your cat's rank now): a pack behind a sync point of a rank reached jumps to it, the
+-- skipped days' summaries shown
+local function crossGameSyncs(rankValueNow, why)
+    if not rankValueNow then return end
+    for _, pk in ipairs(packs) do
+        for _, gs in ipairs(pk.gameSyncs or {}) do
+            local need = rankValue(gs.rank)
+            if need and rankValueNow >= need and pk.day < gs.day then
+                local lines = {}
+                for dn = pk.day, gs.day - 1 do
+                    local sm = getIn(pk.days, dn, "Summary")
+                    if sm then lines[#lines + 1] = sm end
+                end
+                log("days: %s - the game's story passed %s (rank %s, %s): day %d -> %d, %d summar%s", pk.name, gs.name,
+                    gs.rank, why or "?", pk.day, gs.day, #lines, #lines == 1 and "y" or "ies")
+                pk.day, pk.seen = gs.day, {}
+                if Events then
+                    Events.Card(string.format("%s - meanwhile ...", pk.name))
+                    for _, l in ipairs(lines) do Events.Card(l) end
+                end
+                setUp("the game's story moved on")
+            end
+        end
+    end
+end
+local function latestRank()
+    local r = WaCa.Latest and WaCa.Latest("player.rank")
+    return type(r) == "table" and tonumber(r.rank) or nil
+end
+
 function Days.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
     Weather, Duties, Events = c.Weather, c.Duties, c.Events
@@ -318,6 +425,34 @@ function Days.Init(c)
         setUp("the session starts")
     end)
     WaCa.On("DutiesJudged", function(_, done, missed) lastJudged = { done = done, missed = missed } end)
+    -- (the game's own story: its rank-up quest coming = the warning; the rank-up = the crossing)
+    local anyGameSync = false
+    for _, pk in ipairs(packs) do if #(pk.gameSyncs or {}) > 0 then anyGameSync = true end end
+    if anyGameSync then
+        WaCa.Watch("OnQuestAdded", "/Script/SwtQuest.GuiHudQuest", "WaCaQuestAdded", "post", "Quest")
+        WaCa.On("WaCaQuestAdded", function(_, quest)
+            -- (a quest's path from another mod / a test: its object here)
+            if type(quest) == "string" then quest = StaticFindObject(quest) end
+            local ok, rank = pcall(questRank, quest)
+            if ok and rank then
+                log("days: the game added a quest that makes your cat %s", rank)
+                warnGameSync(rank)
+            end
+        end)
+        WaCa.Subscribe("player.rank", function(d)
+            if restoredFor and type(d) == "table" then crossGameSyncs(tonumber(d.rank), d.from) end
+        end)
+        -- (and a quest of that kind already on when the session starts / a mod reloads)
+        WaCa.On("WaCaCheckGameSync", function()
+            for _, h in ipairs(FindAllOf("GuiHudQuest") or {}) do
+                pcall(function()
+                    local q = WaCa.Live(h.MainQuest)
+                    local rank = q and questRank(q)
+                    if rank then warnGameSync(rank) end
+                end)
+            end
+        end)
+    end
     -- (other mods - a story mod, a test - move the story: WaCa.Emit("SetStoryDay", n); kept with the save as any day)
     WaCa.On("SetStoryDay", function(n)
         if tonumber(n) then Days.SetStory(math.floor(tonumber(n)), "asked for (SetStoryDay)") end
@@ -367,6 +502,10 @@ function Days.Init(c)
                 for key in (s.Seen or ""):gmatch("[^,%s]+") do seen[key] = true end
                 setUp("as saved")
             end
+            -- (the save's pack days known now: a rank reached while a pack was behind - the save's or an older
+            -- session's - crosses it; a rank-up quest already on is warned about)
+            crossGameSyncs(latestRank(), "as saved")
+            WaCa.Emit("WaCaCheckGameSync")
         end
         local path = sidecar()
         if path then
