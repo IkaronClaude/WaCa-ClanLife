@@ -69,6 +69,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Set: <var> = <value>` | sets a story variable (section 5) - `Set: X = Day + 2` works too |
 | `Add: <var> <n>` | adds to one (`Add: LeaderFavour 2`) |
 | `If: <conditions>` | the rest of the scene only if they hold - or, with `Else` / `EndIf` steps after it, the steps up to `Else` (or `EndIf`) only; `Else` ... `EndIf` when they don't (not nested) |
+| `Activity: <name> @ <who>` | that cat does one of `activities.ini`'s activities now (Sit, Nap, Sniff ...) - your cat can join it with the Join key |
 | `Choice: <variable> = <question>; <answer 1>; <answer 2> ...` | the player picks an answer (number keys 1-4, up to four answers); the variable gets its number - then `If: <variable> = 1` ... |
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
 | `Pose: <pose> @ <who>` | a cat plays a pose (Sit, Growl, Hiss, Sniff ...) |

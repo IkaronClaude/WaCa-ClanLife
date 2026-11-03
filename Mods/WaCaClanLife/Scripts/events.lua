@@ -1736,6 +1736,16 @@ local function runStep(s, ctx, nextStep, stop, jump)
     elseif k == "Pose" then
         Events.Pose(s.value, s.who, ctx)
         nextStep()
+    elseif k == "Activity" then
+        -- (Activity: <name> @ <who> - that cat does one of activities.ini's [Activity.*] now, joinable with the Join key;
+        -- library exercise 2026-11-03)
+        local cat = Events.Who(s.who or "Nearest")
+        if cat then
+            WaCa.Emit("StartActivity", s.value, (cat:GetFullName():gsub("^%S+ ", "")))
+        else
+            log("events: Activity %s - no cat '%s'", tostring(s.value), tostring(s.who or "Nearest"))
+        end
+        nextStep()
     elseif k == "Choice" then
         askChoice(s.value, nextStep)
     elseif k == "Freeze" then
