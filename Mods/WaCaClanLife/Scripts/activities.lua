@@ -9,6 +9,11 @@ local WaCa, log, modDir, DayNight
 local cfg = { on = false, every = 20, radius = 3000, pairRadius = 2500, list = {}, total = 0 }
 local running, generation = false, 0
 local busyUntil = {}             -- cat name -> os.time() its activity ends
+local doing = {}                 -- a cat's object path -> { activity, till }: what it's doing now (joining picks it up)
+local function pathOf(a) return (a:GetFullName():gsub("^%S+ ", "")) end
+local function noteDoing(cat, activity, seconds)
+    pcall(function() doing[pathOf(cat)] = { activity = activity, till = os.time() + math.ceil(seconds or 30) } end)
+end
 
 local function player()
     for _, c in ipairs(FindAllOf("SwtPlayerController") or {}) do
@@ -79,7 +84,9 @@ local function namedPair(pawn, activity)
         end
     end
     if not partner then return false end
-    return Walkers.Pair(first, partner, activity.montage, activity.name)
+    local ok = Walkers.Pair(first, partner, activity.montage, activity.name)
+    if ok then noteDoing(first, activity, 60) noteDoing(partner, activity, 60) end
+    return ok
 end
 
 local function once()
@@ -100,7 +107,9 @@ local function once()
     end
     local first = cats[math.random(#cats)]
     local function play(cat)
-        busyUntil[cat:GetFName():ToString()] = os.time() + math.ceil(cat:PlayAnimMontage(montage, 1.0, FName("None")))
+        local len = cat:PlayAnimMontage(montage, 1.0, FName("None"))
+        busyUntil[cat:GetFName():ToString()] = os.time() + math.ceil(len)
+        noteDoing(cat, activity, len)
     end
     if not activity.pair then
         log("activities: %s - %s", first:GetFName():ToString(), activity.name)
@@ -214,7 +223,7 @@ end
 -- with) the Join key makes both do an activity together; when it's over the bond grows the game's own way
 -- (WaCaNative_AddBond -> its AddPersonalBonding: saved, ranks up like a dialogue answer), at most PerDay times per
 -- cat and day. [Join] in activities.ini.
-local join = { on = false, key = "G", radius = 400, bond = 2, perDay = 1, montage = nil, done = {} }
+local join = { on = false, key = "G", radius = 400, bond = 2, perDay = 1, montage = nil, done = {}, camera = "Two", lines = {} }
 local roleNames
 
 local function roleName(value)
@@ -262,7 +271,9 @@ end
 
 local function joinNow()
     local pawn = player()
-    if not pawn or WaCa.InMenu() then return end
+    -- (said, not silent: a press that does nothing looked like a broken key, VM 2026-11-03)
+    if not pawn then log("activities: not now - your cat isn't in the world") return end
+    if WaCa.InMenu() then log("activities: not now - a menu is open") return end
     local cat, dist = storyCatNear(pawn)
     if not cat then
         log("activities: no story cat close enough to join (within %d)", join.radius)
@@ -275,16 +286,33 @@ local function joinNow()
         log("activities: you've spent time with %s today already", roleName(role))
         return
     end
-    local montage = LoadAsset(join.montage) or WaCa.LoadAsset(join.montage)
+    -- (JOINING WHAT IT'S DOING - library exercise 2026-11-03, item 5 "joining the ambient activities": a cat in the
+    -- middle of an activity is joined in THAT one - its montage, its name; else the [Join] montage)
+    local now = doing[pathOf(cat)]
+    local activity = now and now.till > os.time() and now.activity or nil
+    local path = activity and activity.montage or join.montage
+    local montage = LoadAsset(path) or WaCa.LoadAsset(path)
     if not montage then
-        log("activities: the join montage %s doesn't load", tostring(join.montage))
+        log("activities: the join montage %s doesn't load", tostring(path))
         return
     end
     face(pawn, cat)
     pcall(function() face(cat, pawn) end)
     local len = math.max(playOn(pawn, montage), playOn(cat, montage), 2)
     join.done[key] = (join.done[key] or 0) + 1
-    log("activities: your cat and %s (%.0f away) spend time together (%.1f s)", roleName(role), dist, len)
+    log("activities: your cat and %s (%.0f away) spend time together%s (%.1f s)", roleName(role), dist,
+        activity and (" - joining its " .. activity.name) or "", len)
+    -- (THE MOMENT - a camera on the two (WaCa Cutscenes' CameraMoment) and a line of the cat's: [Join] Camera / Line<n>,
+    -- {CAT} = its name, {ACTIVITY} = what you do together)
+    if join.camera ~= "" then
+        pcall(WaCa.Emit, "CameraMoment", join.camera, pathOf(pawn) .. ";" .. pathOf(cat), math.max(3, len), 1)
+    end
+    if #join.lines > 0 then
+        local name = (WaCa.CatName and WaCa.CatName(cat)) or roleName(role)
+        local line = join.lines[math.random(#join.lines)]
+            :gsub("{CAT}", name):gsub("{ACTIVITY}", activity and activity.name:lower() or "sitting together")
+        pcall(WaCa.Emit, "ShowLine", line, 5)
+    end
     ExecuteInGameThreadWithDelay(math.floor(len * 1000), function()
         local ok = WaCaNative_AddBond and WaCaNative_AddBond(role, join.bond)
         log("activities: bond with %s %s%d%s", roleName(role), join.bond >= 0 and "+" or "", join.bond,
@@ -303,6 +331,10 @@ function Activities.Init(c)
     join.radius = tonumber(j.Radius or "") or join.radius
     join.bond = math.floor(tonumber(j.Bond or "") or join.bond)
     join.perDay = math.max(1, math.floor(tonumber(j.PerDay or "") or join.perDay))
+    join.camera = j.Camera ~= nil and j.Camera or join.camera
+    for _, k in ipairs(j.__order or {}) do
+        if k:match("^Line%d*$") and (j[k] or "") ~= "" then join.lines[#join.lines + 1] = j[k] end
+    end
     join.montage = (j.Montage or "") ~= "" and j.Montage or
         "/Game/Art/Characters/CatMaster/Animations/Montages/AM_CatMaster_SimpleSit.AM_CatMaster_SimpleSit"
     log("activities: joining %s (key %s, bond +%d, %d per cat and day)", join.on and "on" or "off", join.key, join.bond, join.perDay)
