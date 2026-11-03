@@ -325,6 +325,14 @@ local castSpecs = {}         -- "S:name" -> who plays it (events.ini [Cast]: a c
 local castMissed = {}        -- "S:name" -> true once its miss was logged (the retries stay quiet)
 local castRetrying = false
 
+-- a newcomer playing a story role (kits.lua): the role's cat is found by the newcomer's name from now on
+local function newcomerCast(key, name)
+    castSpecs[key] = name
+    castMissed[key] = nil
+    log("events: [Cast] %s = %s (a newcomer)", key, name)
+    pcall(Events.Cast, key)
+end
+
 function Events.BindRole(key, cat)
     if type(cat) ~= "string" then cat = cat and (cat:GetFullName():gsub("^%S+ ", "")) end
     bound[key] = cat
@@ -1839,8 +1847,10 @@ local function runStep(s, ctx, nextStep, stop, jump)
         WaCa.Emit("SkipDays", s.value)
         nextStep()
     elseif k == "Newcomer" then
-        -- (Newcomer: <clanmate> - a new cat joins the clan, taking after that clanmate - kits.lua)
-        WaCa.Emit("Newcomer", s.value)
+        -- (Newcomer: <clanmate> [as S:<role>] - a new cat joins the clan, taking after that clanmate - kits.lua; "as
+        -- S:<role>": it plays that story role from now on - later scenes / cutscenes cast it by the role)
+        local like, castAs = tostring(s.value):match("^%s*(.-)%s+as%s+(S:[%w_]+)%s*$")
+        WaCa.Emit("Newcomer", like or s.value, castAs)
         nextStep()
     elseif k == "Activity" then
         -- (Activity: <name> @ <who> - that cat does one of activities.ini's [Activity.*] now, joinable with the Join key;
@@ -2227,6 +2237,11 @@ function Events.Init(c)
     end
     -- (a reload with the world up: the panels for this save's story as it stands)
     ExecuteInGameThreadWithDelay(3000, function() if WaCa.CurrentSlot() then pcall(refreshPanels) end end)
+    WaCa.On("NewcomerCast", function(key, name)
+        if tostring(key or ""):match("^S:") and (name or "") ~= "" then
+            ExecuteInGameThread(function() newcomerCast(tostring(key), tostring(name)) end)
+        end
+    end)
     WaCa.On("PlayScene", function(text)
         local steps = { context = {} }                  -- (a scene's own context: its gathered cats, its place)
         for line in tostring(text or ""):gmatch("[^|]+") do

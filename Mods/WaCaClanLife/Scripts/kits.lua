@@ -160,8 +160,9 @@ local function keep()
     for i, kit in ipairs(kits) do
         local key = "Kit" .. i
         data[key] = { Name = kit.name, Mate = kit.mate or "", Born = tostring(kit.born or 0), Grown = kit.grown and "1" or "0",
-                      Adult = kit.adult and "1" or "0", Like = kit.like or "", Role = kit.role or "", Look = kit.look,
-                      __order = { "Name", "Mate", "Born", "Grown", "Adult", "Like", "Role", "Look" } }
+                      Adult = kit.adult and "1" or "0", Like = kit.like or "", Role = kit.role or "",
+                      CastAs = kit.castAs or "", Look = kit.look,
+                      __order = { "Name", "Mate", "Born", "Grown", "Adult", "Like", "Role", "CastAs", "Look" } }
         data.__order[#data.__order + 1] = key
     end
     WaCa.WriteIni(path, data, "; WaCa Clan Life - this save's own kits (kits.lua)")
@@ -184,7 +185,8 @@ local function restore()
         if (k.Look or "") ~= "" then
             kits[#kits + 1] = { name = k.Name, look = k.Look, mate = k.Mate, born = tonumber(k.Born or "") or 0,
                                 grown = k.Grown == "1", adult = k.Adult == "1", like = (k.Like or "") ~= "" and k.Like or nil,
-                                role = (k.Role or "") ~= "" and k.Role or nil }
+                                role = (k.Role or "") ~= "" and k.Role or nil,
+                                castAs = (k.CastAs or "") ~= "" and k.CastAs or nil }
         end
         i = i + 1
     end
@@ -202,6 +204,10 @@ local function restore()
         end
     end
     if #kits > 0 then log("kits: %d of your own in this save", #kits) end
+    -- (a newcomer that plays a story role: the role bound to it again - by its name, which only the save knows)
+    for _, kit in ipairs(kits) do
+        if kit.castAs then WaCa.Emit("NewcomerCast", kit.castAs, kit.name) end
+    end
 end
 
 -- the mate's look: the clanmate in the world by name, else the save's story cat of that name
@@ -277,7 +283,9 @@ function Kits.Born(mate, count)
 end
 
 -- a newcomer taking after the clanmate `like` - its name, or nil
-function Kits.Newcomer(like)
+-- castAs: a story role the newcomer plays ("S:apprentice") - a later scene / cutscene casts it by that role (library
+-- exercise 2026-11-03: its name is made up when it joins, so a writer can't name it in [Cast])
+function Kits.Newcomer(like, castAs)
     local look = like and lookOfMate(like)
     if not look then
         log("kits: newcomer - no clanmate '%s' to take after", tostring(like))
@@ -295,10 +303,13 @@ function Kits.Newcomer(like)
             local grown = blended:gsub('SuffixNameId="[^"]*"', 'SuffixNameId="' .. suffix .. '"'):gsub("Role=%w+", "Role=" .. role)
             -- (the rank line: the clanmate's own plate's - the game's word in the game's language)
             local plateRole = (WaCa.RoleText and WaCa.RoleText(role)) or (WaCa.PlateRole and WaCa.PlateRole(like)) or nil
+            castAs = (castAs or "") ~= "" and castAs or nil
             kits[#kits + 1] = { name = name, look = grown, mate = "", grown = true, adult = true, like = like, role = plateRole,
-                                born = DayNight and DayNight.Day and DayNight.Day() or 0 }
-            log("kits: a newcomer joins the clan - %s (%s, taking after %s)", name, role, like)
+                                castAs = castAs, born = DayNight and DayNight.Day and DayNight.Day() or 0 }
+            log("kits: a newcomer joins the clan - %s (%s, taking after %s)%s", name, role, like,
+                castAs and (" - plays " .. castAs) or "")
             place()
+            if castAs then WaCa.Emit("NewcomerCast", castAs, name) end
             WaCa.Emit("NewcomerJoined", name, like)
             return name
         end
@@ -321,10 +332,10 @@ function Kits.Init(c)
     cfg.newcomerRing = tonumber(k.NewcomerRing or "") or cfg.newcomerRing
     log("kits: %s (%d-%d a litter, by the nursery)", cfg.on and "on" or "off", cfg.countMin, cfg.countMax)
     -- (newcomers whatever [Kits] On says - the save's kits / newcomers placed and kept the same way)
-    WaCa.On("Newcomer", function(like)
+    WaCa.On("Newcomer", function(like, castAs)
         ExecuteInGameThread(function()
             pcall(restore)
-            local ok, err = pcall(Kits.Newcomer, like)
+            local ok, err = pcall(Kits.Newcomer, like, castAs)
             if not ok then log("kits: the newcomer failed (%s)", tostring(err)) end
         end)
     end)

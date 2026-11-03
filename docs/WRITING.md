@@ -70,7 +70,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Add: <var> <n>` | adds to one (`Add: LeaderFavour 2`) |
 | `If: <conditions>` | the rest of the scene only if they hold - or, with `Else` / `EndIf` steps after it, the steps up to `Else` (or `EndIf`) only; `Else` ... `EndIf` when they don't (not nested) |
 | `Skip: <days or a skip's name>` | time passes on purpose: the world fades, a card says what changed; a skip of your own is `[Skip.<Name>]` in your pack's `timeskip.ini` - `Days`, `Pile` (the fresh-kill pile's value after it), `Card`. The day's hunt / patrol is set aside (not missed); a skip runs no duties - the story check warns about any you put on one |
-| `Newcomer: <clanmate>` | a new cat joins the clan, taking after that clanmate (8c) |
+| `Newcomer: <clanmate>` (or `Newcomer: <clanmate> as S:<role>`) | a new cat joins the clan, taking after that clanmate (8c); with `as S:<role>` the newcomer plays that story role from then on - later scenes and cutscenes cast it as `S:<role>` (its name is made up when it joins, so you can't name it in `[Cast]`) |
 | `Activity: <name> @ <who>` | that cat does one of `activities.ini`'s activities now (Sit, Nap, Sniff ...) - your cat can join it with the Join key |
 | `Choice: <variable> = <question>; <answer 1>; <answer 2> ...` | the player picks an answer on the game's own answer menu (the quest dialogue's: up to four answers - the mouse, Up / Down + Enter, or the number keys); `<question>` as `Name: ...` puts Name on the speaker's plate; the variable gets the answer's number - then `If: <variable> = 1` ... |
 | `Wait: <s>`, `Fade: <s>`, `FadeIn: <s>` | a pause; the screen fading out / in |
