@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Story Pack Editor</title>
+<style>
+:root { --bg: #f7f5f0; --panel: #ffffff; --ink: #222; --muted: #6b6b6b; --line: #ddd8cc; --accent: #2f6f5e; --bad: #b3261e; --warn: #8a6d00; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1b1d1c; --panel: #242726; --ink: #e8e6e1; --muted: #a29f97; --line: #3a3d3b; --accent: #7cc4ad; --bad: #f2867c; --warn: #e3c35a; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, sans-serif; }
+header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0 12px 0 0; }
+button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); cursor: pointer; }
+button.primary { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+#status { color: var(--muted); }
+main { display: grid; grid-template-columns: 230px 1fr 300px; gap: 12px; padding: 12px 16px; }
+@media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
+.panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 10px 0 4px; }
+.item { padding: 3px 6px; border-radius: 4px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item:hover { background: var(--bg); } .item.sel { background: var(--accent); color: var(--bg); }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 2px 4px; vertical-align: top; } td.k { width: 140px; }
+input { width: 100%; font: 13px ui-monospace, monospace; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--ink); }
+.prob { padding: 4px 0; border-bottom: 1px solid var(--line); cursor: pointer; } .prob b { color: var(--bad); } .prob i { color: var(--warn); font-style: normal; font-weight: 600; }
+.hint { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Story Pack Editor</h1>
+  <button id="open" class="primary">Open a pack folder</button>
+  <button id="save" disabled>Save</button>
+  <span id="status">Chrome or Edge: open your pack's folder (the one with content\ in it).</span>
+</header>
+<main>
+  <div class="panel" id="outline"><p class="hint">No pack open.</p></div>
+  <div class="panel" id="editor"><p class="hint">Pick an event, a cutscene, a murmur or the cast on the left. Every key is explained in WaCa Clan Life's docs\WRITING.md.</p></div>
+  <div class="panel" id="problems"><h2>Check</h2><p class="hint">Problems show here as you type.</p></div>
+</main>
+<datalist id="kinds"></datalist><datalist id="beats"></datalist>
+<script>
+// THE STORY-PACK EDITOR'S CORE (no browser needed - node tests it): read a pack's ini files keeping every comment,
+// blank line and key order, change keys, write them back byte for byte where nothing changed; and check a pack the way
+// tools/check_pack.py does. pack_editor.html wraps it (build_pack_editor.py bakes in the mods' known names).
+"use strict";
+
+// --- ini, round-trip safe ---
+
+// text -> { eol, sections: [{ name, lines: [{ kind: "kv" | "other", key, value, raw }] }] } - the lines before the first
+// [section] live in a section named "" (comments at the top of a file)
+function parseIni(text) {
+    const eol = text.includes("\r\n") ? "\r\n" : "\n";
+    const raw = text.split(/\r?\n/);
+    if (raw.length && raw[raw.length - 1] === "") raw.pop();       // (the file's last line end)
+    const sections = [{ name: "", lines: [] }];
+    for (const line of raw) {
+        const t = line.trim();
+        const h = /^\[(.+)\]$/.exec(t);
+        if (h) { sections.push({ name: h[1].trim(), header: line, lines: [] }); continue; }
+        const cur = sections[sections.length - 1];
+        if (t && !/^[;#]/.test(t) && t.includes("=")) {
+            const i = line.indexOf("=");
+            const key = line.slice(0, i).trim();
+            let value = line.slice(i + 1);
+            const m = /\s;.*$/.exec(value);                           // (a trailing ; comment stays with the line)
+            cur.lines.push({ kind: "kv", key, value: (m ? value.slice(0, m.index) : value).trim(), raw: line });
+        } else {
+            cur.lines.push({ kind: "other", raw: line });
+        }
+    }
+    return { eol, sections };
+}
+
+function serializeIni(model) {
+    const out = [];
+    for (const s of model.sections) {
+        if (s.name !== "" || s.header !== undefined) out.push(s.header !== undefined ? s.header : "[" + s.name + "]");
+        for (const l of s.lines) out.push(l.raw);
+    }
+    return out.join(model.eol) + model.eol;
+}
+
+function section(model, name) { return model.sections.find(s => s.name === name) || null; }
+
+function get(model, sec, key) {
+    const s = section(model, sec);
+    const l = s && s.lines.find(x => x.kind === "kv" && x.key === key);
+    return l ? l.value : undefined;
+}
+
+// set a key (a changed line keeps its trailing comment); value null removes it; a new key goes after the section's
+// last key (before its trailing blank / comment lines)
+function set(model, sec, key, value) {
+    let s = section(model, sec);
+    if (!s) {
+        if (value === null) return;
+        const last = model.sections[model.sections.length - 1];
+        if (last.lines.length && last.lines[last.lines.length - 1].raw.trim() !== "") last.lines.push({ kind: "other", raw: "" });
+        s = { name: sec, header: "[" + sec + "]", lines: [] };
+        model.sections.push(s);
+    }
+    const i = s.lines.findIndex(x => x.kind === "kv" && x.key === key);
+    if (value === null) { if (i >= 0) s.lines.splice(i, 1); return; }
+    if (i >= 0) {
+        const l = s.lines[i];
+        const m = /\s;.*$/.exec(l.raw.slice(l.raw.indexOf("=") + 1));
+        l.value = String(value);
+        l.raw = key + " = " + l.value + (m ? " " + m[0].trim() : "");
+        return;
+    }
+    let at = s.lines.length;
+    while (at > 0 && s.lines[at - 1].kind !== "kv") at--;
+    if (at === 0) at = s.lines.length;
+    s.lines.splice(at, 0, { kind: "kv", key, value: String(value), raw: key + " = " + value });
+}
+
+// --- the check (tools/check_pack.py's rules; known = { kinds, actions, shots } from the mods' Lua) ---
+
+const NEED = { Portrait: 1, Behind: 1, Over: 2, Two: 2 };
+const rolesIn = text => (String(text || "").match(/S:[A-Za-z0-9_]+/g) || []);
+
+// files: { "clanevents.ini": model, ... } (the pack's content folder); others: extra [Cast] models (other packs)
+function check(files, known, others) {
+    const problems = [], warnings = [];
+    const kv = model => model ? model.sections.flatMap(s => s.lines.filter(l => l.kind === "kv").map(l => ({ sec: s.name, ...l }))) : [];
+    const cast = {};
+    for (const m of [files["events.ini"], ...(others || [])]) {
+        const s = m && section(m, "Cast");
+        if (s) for (const l of s.lines) if (l.kind === "kv") cast[l.key] = l.value;
+    }
+    for (const f of ["clanevents.ini", "days.ini", "gatherings.ini"]) {
+        for (const l of kv(files[f])) {
+            const m = /^\s*Newcomer\s*:.*\bas\s+(S:[A-Za-z0-9_]+)/.exec(l.value);
+            if (m && !cast[m[1]]) cast[m[1]] = "a newcomer";
+        }
+    }
+    const P = (f, l, text) => problems.push({ file: f, section: l.sec, key: l.key, text });
+    const W = (f, l, text) => warnings.push({ file: f, section: l.sec, key: l.key, text });
+    const uncast = (f, l, v) => { for (const r of rolesIn(v)) if (!(r in cast)) P(f, l, `the role ${r} has no cat - give it one in [Cast]`); };
+
+    for (const f of ["clanevents.ini", "days.ini", "gatherings.ini", "duties.ini"]) {
+        for (const l of kv(files[f])) {
+            if (/^Step\d*$/.test(l.key)) {
+                const m = /^\s*(\w+)\s*(?::|$)/.exec(l.value);
+                if (!m) P(f, l, `can't read the step '${l.value}' (Kind: what)`);
+                else if (known.kinds && !known.kinds.includes(m[1])) P(f, l, `unknown step kind '${m[1]}'`);
+            }
+            uncast(f, l, l.value);
+            if (l.key === "When" && f === "clanevents.ini") {
+                const r = /^Reach:\s*(.+)$/.exec(l.value);
+                const spec = r && r[1].trim();
+                if (spec && /^S:/.test(spec) && /^(Rogue|Clan:)/.test(cast[spec] || "")) W(f, l, `${spec} is played by ${cast[spec]}, brought in only for scenes - it can't be met`);
+                else if (spec && /^-?[\d.]+[\s,]/.test(spec) && !/^-?[\d.]+[\s,]+-?[\d.]+[\s,]+-?[\d.]+$/.test(spec)) W(f, l, `'${spec}' looks like a place but isn't x y z`);
+            }
+        }
+    }
+    for (const l of kv(files["lines.ini"])) if (l.key === "Who" || /^Line\d+$/.test(l.key)) uncast("lines.ini", l, l.value);
+    for (const l of kv(files["cutscenes.ini"])) {
+        if (!l.sec.startsWith("Cutscene.")) continue;
+        if (/^[A-Z]$/.test(l.key)) uncast("cutscenes.ini", l, l.value);
+        if (!/^Beat\d+[a-z]?$/.test(l.key)) continue;
+        const m = /^\s*[\d.]+\s*(\[[^\]]*\]\s*)?(\w+)\s*(?::\s*(.*))?$/.exec(l.value);
+        if (!m) { P("cutscenes.ini", l, `can't read the beat '${l.value}' (<seconds> Action: who = what)`); continue; }
+        const action = m[2], rest = m[3] || "";
+        if (known.actions && !known.actions.includes(action)) { P("cutscenes.ini", l, `no action '${action}'`); continue; }
+        if (action === "Camera") {
+            const [who, what = ""] = rest.split(/=(.*)/s);
+            const shot = (/^\s*(\w+)/.exec(who) || [])[1];
+            if (known.shots && shot && !known.shots.includes(shot)) P("cutscenes.ini", l, `no camera shot '${shot}'`);
+            else if (NEED[shot]) {
+                const named = what.replace(/~[\d.]+/g, "").split(/[,&>]/).filter(x => x.trim()).length;
+                if (named < NEED[shot]) P("cutscenes.ini", l, `Camera: ${shot} frames ${NEED[shot]} cat(s), ${named} named`);
+            }
+        }
+        uncast("cutscenes.ini", l, rest);
+    }
+    return { problems, warnings };
+}
+
+// the pack's sections an editor lists: events, cutscenes, the cast, murmurs
+function outline(files) {
+    const names = (f, prefix) => (files[f] ? files[f].sections.filter(s => s.name.startsWith(prefix)).map(s => s.name) : []);
+    return {
+        events: names("clanevents.ini", "Event."),
+        cutscenes: names("cutscenes.ini", "Cutscene."),
+        murmurs: names("lines.ini", "Murmur."),
+        cast: files["events.ini"] && section(files["events.ini"], "Cast") ? section(files["events.ini"], "Cast").lines.filter(l => l.kind === "kv").map(l => l.key) : [],
+    };
+}
+
+const PackCore = { parseIni, serializeIni, section, get, set, check, outline };
+if (typeof module !== "undefined") module.exports = PackCore;
+if (typeof window !== "undefined") window.PackCore = PackCore;
+
+</script>
+<script>
+"use strict";
+const KNOWN = {"kinds": ["Activity", "Add", "Bond", "Card", "Choice", "Cutscene", "Dialogue", "Duty", "Else", "Emit", "EndIf", "Fade", "FadeIn", "Freeze", "Gather", "Groups", "Hook", "If", "Lead", "Newcomer", "Pair", "Part", "Party", "Pose", "Release", "Set", "Skip", "Wait"], "actions": ["Ask", "Camera", "Card", "Emit", "End", "Fade", "FadeIn", "Look", "Place", "Pose", "Say", "Set", "Sound", "Wait", "Walk", "WalkIn"], "shots": ["Behind", "Game", "High", "Orbit", "Over", "Portrait", "Two", "Wide"]} || { kinds: [], actions: [], shots: [] };
+const C = window.PackCore;
+let dirHandle = null, contentHandle = null, files = {}, saved = {}, current = null;
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("kinds").innerHTML = KNOWN.kinds.map(k => `<option value="${k}: ">`).join("");
+$("beats").innerHTML = KNOWN.actions.map(a => `<option value="0 ${a}: ">`).join("") + KNOWN.shots.map(s => `<option value="0 Camera: ${s}">`).join("");
+
+$("open").onclick = async () => {
+    if (!window.showDirectoryPicker) { $("status").textContent = "This browser can't open folders - use Chrome or Edge."; return; }
+    try { dirHandle = await window.showDirectoryPicker({ mode: "readwrite" }); } catch (e) { return; }
+    try { contentHandle = await dirHandle.getDirectoryHandle("content"); }
+    catch (e) { $("status").textContent = `No content folder in ${dirHandle.name} - pick the pack's own folder.`; return; }
+    files = {}; saved = {};
+    for await (const [name, h] of contentHandle.entries()) {
+        if (h.kind === "file" && name.toLowerCase().endsWith(".ini")) {
+            const text = await (await h.getFile()).text();
+            files[name] = C.parseIni(text); saved[name] = text;
+        }
+    }
+    $("status").textContent = `${dirHandle.name}: ${Object.keys(files).length} file(s)`;
+    current = null; render();
+};
+
+$("save").onclick = async () => {
+    let n = 0;
+    for (const [name, model] of Object.entries(files)) {
+        const text = C.serializeIni(model);
+        if (text === saved[name]) continue;
+        const h = await contentHandle.getFileHandle(name, { create: true });
+        const w = await h.createWritable(); await w.write(text); await w.close();
+        saved[name] = text; n++;
+    }
+    $("status").textContent = `${dirHandle.name}: saved ${n} file(s). Restart the game to load them.`;
+    render();
+};
+
+function ensure(name) { if (!files[name]) { files[name] = C.parseIni(""); saved[name] = ""; } return files[name]; }
+function dirty() { return Object.entries(files).some(([n, m]) => C.serializeIni(m) !== saved[n]); }
+
+function render() {
+    const o = C.outline(files);
+    const list = (title, file, names, label, add) => `<h2>${title}</h2>` + names.map(n =>
+        `<div class="item${current && current.file === file && current.section === n ? " sel" : ""}" data-file="${file}" data-sec="${esc(n)}">${esc(label(n))}</div>`).join("") +
+        (add ? `<button data-add="${add}" style="margin-top:4px">+ new</button>` : "");
+    $("outline").innerHTML = dirHandle ? list("Roles", "events.ini", o.cast.length ? ["Cast"] : [], () => o.cast.join(", ") || "Cast", "") +
+        list("Clan events", "clanevents.ini", o.events, n => n.replace(/^Event\./, ""), "event") +
+        list("Cutscenes", "cutscenes.ini", o.cutscenes, n => n.replace(/^Cutscene\./, ""), "cutscene") +
+        list("Murmurs", "lines.ini", o.murmurs, n => n.replace(/^Murmur\./, ""), "murmur") : `<p class="hint">No pack open.</p>`;
+    for (const el of document.querySelectorAll(".item")) el.onclick = () => { current = { file: el.dataset.file, section: el.dataset.sec }; render(); };
+    for (const el of document.querySelectorAll("[data-add]")) el.onclick = () => addSection(el.dataset.add);
+    renderEditor(); renderCheck();
+    $("save").disabled = !dirHandle || !dirty();
+}
+
+function addSection(kind) {
+    const name = prompt(`The new ${kind}'s name (letters, no spaces):`);
+    if (!name || !/^[A-Za-z][A-Za-z0-9]*$/.test(name)) return;
+    const spec = { event: ["clanevents.ini", "Event.", [["When", "Morning"], ["Step1", "Card: ..."]]],
+                   cutscene: ["cutscenes.ini", "Cutscene.", [["Place", "Here"], ["Shape", "Facing"], ["A", "Player"], ["B", "Nearest"], ["Beat1", "0 Camera: Wide"], ["Beat2", "5 End"]]],
+                   murmur: ["lines.ini", "Murmur.", [["Who", "All"], ["Line1", "..."]]] }[kind];
+    const m = ensure(spec[0]);
+    for (const [k, v] of spec[2]) C.set(m, spec[1] + name, k, v);
+    if (kind === "cutscene" || kind === "event") ensure("events.ini");
+    current = { file: spec[0], section: spec[1] + name }; render();
+}
+
+function renderEditor() {
+    if (!current || !files[current.file]) { $("editor").innerHTML = `<p class="hint">Pick an event, a cutscene, a murmur or the cast on the left. Every key is explained in WaCa Clan Life's docs\\WRITING.md.</p>`; return; }
+    const s = C.section(files[current.file], current.section);
+    const rows = s ? s.lines.filter(l => l.kind === "kv") : [];
+    const list = current.file === "cutscenes.ini" ? "beats" : "kinds";
+    $("editor").innerHTML = `<h2>${esc(current.file)} - [${esc(current.section)}]</h2><table>` +
+        rows.map((l, i) => `<tr><td class="k"><input data-i="${i}" data-f="k" value="${esc(l.key)}"></td><td><input data-i="${i}" data-f="v" value="${esc(l.value)}" list="${/^(Step|Beat)/.test(l.key) ? list : ""}"></td><td><button data-del="${i}" title="remove">x</button></td></tr>`).join("") +
+        `</table><button id="addrow" style="margin-top:6px">+ key</button> <span class="hint">${current.file === "cutscenes.ini" ? "Beats: <seconds> Action: who = what" : "Steps: Kind: what [@ who]"}</span>`;
+    for (const el of $("editor").querySelectorAll("input")) el.onchange = () => {
+        const l = rows[+el.dataset.i];
+        if (el.dataset.f === "v") C.set(files[current.file], current.section, l.key, el.value);
+        else if (el.value && el.value !== l.key) { const v = l.value; C.set(files[current.file], current.section, l.key, null); C.set(files[current.file], current.section, el.value, v); }
+        render();
+    };
+    for (const el of $("editor").querySelectorAll("[data-del]")) el.onclick = () => { C.set(files[current.file], current.section, rows[+el.dataset.del].key, null); render(); };
+    $("addrow").onclick = () => {
+        const n = rows.filter(r => /^(Step|Beat)\d+$/.test(r.key)).length + 1;
+        const key = current.file === "cutscenes.ini" ? "Beat" + n : current.file === "lines.ini" ? "Line" + n : "Step" + n;
+        C.set(files[current.file], current.section, key, current.file === "cutscenes.ini" ? "0 Say: B1 = ..." : current.file === "lines.ini" ? "..." : "Card: ...");
+        render();
+    };
+}
+
+function renderCheck() {
+    if (!dirHandle) return;
+    const r = C.check(files, KNOWN, []);
+    $("problems").innerHTML = `<h2>Check - ${r.problems.length} problem(s), ${r.warnings.length} warning(s)</h2>` +
+        (r.problems.length + r.warnings.length === 0 ? `<p class="hint">Nothing found. The game's own story check (Saved\\WaCaStoryCheck.txt) checks it against your save too.</p>` : "") +
+        r.problems.map(p => `<div class="prob" data-file="${p.file}" data-sec="${esc(p.section)}"><b>problem</b> ${esc(p.file)} [${esc(p.section)}] ${esc(p.key)}: ${esc(p.text)}</div>`).join("") +
+        r.warnings.map(p => `<div class="prob" data-file="${p.file}" data-sec="${esc(p.section)}"><i>warning</i> ${esc(p.file)} [${esc(p.section)}] ${esc(p.key)}: ${esc(p.text)}</div>`).join("");
+    for (const el of $("problems").querySelectorAll(".prob")) el.onclick = () => { current = { file: el.dataset.file, section: el.dataset.sec }; render(); };
+}
+window.addEventListener("beforeunload", e => { if (dirHandle && dirty()) { e.preventDefault(); e.returnValue = ""; } });
+</script>
+</body>
+</html>

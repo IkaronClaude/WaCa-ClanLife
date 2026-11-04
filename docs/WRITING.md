@@ -38,6 +38,10 @@ the lines it murmurs - every file commented. Restart the game, walk up to the ca
 `--mods <the game's ue4ss\Mods>`) - misspelled steps and actions, camera shots short of cats, roles nobody plays,
 `Reach:` mistakes, each with its file and line. The in-game story check (section 10) checks the rest against a real save.
 
+**Or edit it in a page:** open `tools\pack_editor\pack_editor.html` in Chrome or Edge, pick your pack's folder - its roles,
+clan events, cutscenes and murmurs are listed; each opens as a list of its keys, with the step kinds and beat actions
+suggested as you type and the same checks shown live; Save writes back only the files you changed, every comment kept.
+
 ## 2. Clan events (`clanevents.ini`)
 
 An event is a short scene that happens at a time of day, by chance or when something happens:
