@@ -644,6 +644,14 @@ local function fadeScreen(from, to, seconds)
     end)
 end
 
+-- a scene has cats staged (a Groups / Gather step until its Release): other parts wait for it - walkers.lua's turn
+-- changed the walkers' looks and names between the meal and sharing tongues (VM 2026-10-29). Declared
+-- above Gather: below it, Gather's staging = true set a global and the walkers never waited (2026-11-04)
+local staging = false
+function Events.Staging() return staging end
+local keepGathered  -- (defined with the reload code below; Gather above it called a nil global - the screen stayed
+                    -- faded and the step never finished, 2026-11-04)
+
 function Events.Gather(n, where, ctx, done)
     local place = placeOf(where)
     if not place then return done() end
@@ -689,11 +697,6 @@ function Events.Gather(n, where, ctx, done)
     end)
 end
 
--- a scene has cats staged (a Groups / Gather step until its Release): other parts wait for it - walkers.lua's turn
--- changed the walkers' looks and names between the meal and sharing tongues (VM 2026-10-29)
-local staging = false
-function Events.Staging() return staging end
-
 -- walkers.lua on: the camp's named cats move (its walker took the nameless walking cats out) - they come to the scenes
 -- themselves, walked to their seats by it, instead of standing where they are
 local function namedWalk()
@@ -731,7 +734,7 @@ end
 -- file): the gathered cats - where they came from, whether the scene showed them - are kept in
 -- Saved/WaCaSceneGathered.ini while a scene holds them; Clan Life starting again puts them back.
 local function gatheredPath() return WaCa.SaveDir() .. "/../WaCaSceneGathered.ini" end
-local function keepGathered(g)
+function keepGathered(g)
     local sec, order = {}, {}
     for i, e in ipairs(g or {}) do
         if e.loc then
@@ -804,8 +807,8 @@ local function readRelations(modDir)
                                 Pairs = relations.pairs }) do
         for a, list in pairs(ini[section] or {}) do
             if a ~= "__order" and a ~= "__mods" and type(list) == "string" then
-                for b in list:gmatch("[^,]+") do
-                    b = b:match("^%s*(.-)%s*$")
+                for raw in list:gmatch("[^,]+") do
+                    local b = raw:match("^%s*(.-)%s*$")
                     if b ~= "" then tie(set, a, b) n = n + 1 end
                 end
             end
@@ -1969,8 +1972,8 @@ local function runStep(s, ctx, nextStep, stop, jump)
         -- story variable Party (saved with the cat, set again each session - Events.Init)
         local roles = {}
         if tostring(s.value):lower() ~= "none" then
-            for who in tostring(s.value or ""):gmatch("[^,]+") do
-                who = who:match("^%s*(.-)%s*$")
+            for raw in tostring(s.value or ""):gmatch("[^,]+") do
+                local who = raw:match("^%s*(.-)%s*$")
                 -- (a pack's own role: the cat its [Cast] gives it - a name or E:<role>; a brought-in cat (Rogue: / Clan:)
                 -- has no story role. Library exercise 2026-11-01: S:herbalist = Mossfeather wasn't found)
                 if who:match("^S:") then

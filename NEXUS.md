@@ -61,6 +61,8 @@ The full guide is in the README on GitHub (TODO: link).
 - **WaCa Core** - TODO: Nexus link
 - Recommended: **WaCa Hunting** (TODO: Nexus link) - the seasons, weather and your cat's tiredness then change the
   hunting odds.
+- Optional: **WaCa Cutscenes** (TODO: Nexus link) - for story packs with cutscenes (`Cutscene:` steps; without
+  it a scene goes straight on).
 
 ## Installation
 1. Install UE4SS for Warrior Cats and WaCa Core (see their pages).

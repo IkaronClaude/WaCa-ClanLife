@@ -122,6 +122,11 @@ local function drawn(a)
     local ok, yes = pcall(function() return not a.bHidden and a.SkeletalMeshComponent:IsVisible() end)
     return ok and yes
 end
+-- (up here: sendHome and a turn's end hide a cat they showed - defined below them, the call was a nil global that
+-- errored and left the cat drawn, 2026-11-04)
+local function draw(a, on)
+    pcall(function() a.SkeletalMeshComponent:SetVisibility(on, true) end)
+end
 local inWorld = false       -- the game's HUD is up (not the menus, not a level loading)
 local function look()
     if not inWorld or WaCa.MenuShowing() ~= false then return end
@@ -1271,9 +1276,6 @@ local function drawn(a)
     local ok, v = pcall(function() return a.SkeletalMeshComponent:IsVisible() end)
     return not ok or v
 end
-local function draw(a, on)
-    pcall(function() a.SkeletalMeshComponent:SetVisibility(on, true) end)
-end
 
 function Walkers.Stage(a, spot, faceYaw, speed)
     local path = pathOf(a)
@@ -1443,8 +1445,8 @@ function Walkers.Init(c)
     local ini = WaCa.ReadContent(c.modDir .. "/config/walkers.ini", "walkers") or {}
     local w = ini["Walkers"] or {}
     cfg.on = c.part("Walkers", w.On)
-    for name in (w.Never or ""):gmatch("[^,]+") do
-        name = name:match("^%s*(.-)%s*$")
+    for raw in (w.Never or ""):gmatch("[^,]+") do
+        local name = raw:match("^%s*(.-)%s*$")
         if name ~= "" then cfg.never[name] = true end
     end
     cfg.roamers = tonumber(w.Roamers or "") or cfg.roamers

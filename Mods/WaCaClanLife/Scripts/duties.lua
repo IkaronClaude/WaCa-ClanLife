@@ -2293,8 +2293,8 @@ function Duties.Init(c)
             if sec.Counted == "1" then COUNTED[name] = true end
             -- (its chances, added to the clan's [Tasks] - a pack writing [Tasks] Morning itself would clash with Clan
             -- Life's own: Chance = Morning:1, Noon:2)
-            for third, w in tostring(sec.Chance or ""):gmatch("(%a+)%s*:%s*([%d%.]+)") do
-                if third == "Afternoon" then third = "Noon" end
+            for raw, w in tostring(sec.Chance or ""):gmatch("(%a+)%s*:%s*([%d%.]+)") do
+                local third = raw == "Afternoon" and "Noon" or raw
                 cfg.weights[third] = cfg.weights[third] or {}
                 cfg.weights[third][name] = tonumber(w)
             end

@@ -251,9 +251,9 @@ function StoryCheck.Run()
         if name then
             if (t.Points or "") == "" then problem("duties", section, "Points", "no points - the duty has nowhere to go") end
             local i = 0
-            for spec in tostring(t.Points or ""):gmatch("[^;]+") do
+            for raw in tostring(t.Points or ""):gmatch("[^;]+") do
                 i = i + 1
-                spec = spec:match("^%s*(.-)%s*$")
+                local spec = raw:match("^%s*(.-)%s*$")
                 local den = spec:match("^Den:%s*(.+)$")
                 local role = spec:match("^(S:[%w_]+)$")
                 if den and dens and not dens[den:lower()] then
