@@ -54,7 +54,7 @@ The fandom is full of talented writers - Clan Life is built so you can tell your
 - Your story is **your own mod** - a folder of text files that adds to the clan's life without editing anyone else's
   files, so many story mods can be installed together.
 
-The full guide is in the README on GitHub (TODO: link).
+The full guide is on GitHub: https://github.com/IkaronClaude/WaCa-ClanLife/blob/main/docs/WRITING.md (also in the mod's docs folder).
 
 ## Requirements
 - **UE4SS for Warrior Cats** - https://www.nexusmods.com/warriorcatsclansoftheforest/mods/2
@@ -90,7 +90,7 @@ Vortex: untested - install manually.
 - The clan's patrols walk out together, but NPCs don't yet *do* their jobs out in the territory.
 
 ## Source code & contributing
-Open source (Apache 2.0): TODO: https://github.com/IkaronClaude/WaCa-ClanLife
+Open source (Apache 2.0): https://github.com/IkaronClaude/WaCa-ClanLife
 
 **Contributions are very welcome - especially writing!** Stories, clan events, dialogue for the cats - send them as a
 pull request, publish them as your own mod, or post ideas in the comments. Programmers: the scene runner, the clan
