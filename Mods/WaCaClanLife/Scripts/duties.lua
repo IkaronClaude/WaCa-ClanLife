@@ -1364,9 +1364,17 @@ local function setUp(kind)
             -- and a point with no PointName showed its key 'S:herbalist' on screen: a cat point is the cat's name,
             -- a PointName / Card may say {S:herbalist})
             q.name = c.names[i] and Events.Fill(c.names[i]) or nil
-            if not q.name and not spec:match("^Den:") and not spec:match("^Zone:") and spec ~= "Pile" and not spec:match("^%-?%d") then
-                local named = Events.Fill("{" .. spec .. "}")
-                if named ~= "{" .. spec .. "}" then q.name = named end
+            if not spec:match("^Den:") and not spec:match("^Zone:") and spec ~= "Pile" and not spec:match("^%-?%d") then
+                -- (a CAT point follows its cat - where() re-reads it; full sweep 2026-11-04: the herbalist's point was
+                -- fixed where she stood when the duty was given - once at the world's origin, the game parking her)
+                q.cat = spec
+                if math.abs(q.X) + math.abs(q.Y) < 100 then
+                    log("duties: %s - point %d (%s) is parked by the game right now (0 0); the point follows the cat once it is about", kind, i, spec)
+                end
+                if not q.name then
+                    local named = Events.Fill("{" .. spec .. "}")
+                    if named ~= "{" .. spec .. "}" then q.name = named end
+                end
             end
             q.name = q.name or spec
             t.points[i] = q
@@ -2047,6 +2055,17 @@ local function where()
     if t.custom and t.points then
         for i, pt in ipairs(t.points) do
             if not pt.done then
+                -- (a cat point: where the cat is now, every 2 s; its marker moves with it)
+                if pt.cat and os.clock() - (pt.seen or 0) > 2 then
+                    pt.seen = os.clock()
+                    local ok, q = pcall(dutyPoint, pt.cat)
+                    if ok and q and math.abs(q.X) + math.abs(q.Y) >= 100 then
+                        local moved = (q.X - pt.X) ^ 2 + (q.Y - pt.Y) ^ 2 > 300 ^ 2
+                        pt.X, pt.Y, pt.Z = q.X, q.Y, q.Z
+                        local m = moved and pt.marker and StaticFindObject(pt.marker)
+                        if m and m:IsValid() then pcall(function() m:K2_SetActorLocation(q, false, {}, true) end) end
+                    end
+                end
                 if dist(pt) <= t.custom.reach then reached(t, "point", i) end
                 break
             end
