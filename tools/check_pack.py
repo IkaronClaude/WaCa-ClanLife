@@ -109,6 +109,15 @@ def main():
                     elif spec and re.match(r"^-?[\d.]+[\s,]", spec) and not re.match(r"^-?[\d.]+[\s,]+-?[\d.]+[\s,]+-?[\d.]+$", spec):
                         warning(fname, sec, k, n, f"'{spec}' looks like a place but isn't x y z")
 
+    # LINES - murmurs and dialogue: who says them (Who = S:<role>) and the roles a line names ({S:<role>})
+    ini = read_ini(os.path.join(content, "lines.ini"))
+    for sec, items in ini.items():
+        for k, v, n in items:
+            if k == "Who" or re.match(r"^Line\d+$", k):
+                for role in roles_in(v):
+                    if role not in cast:
+                        problem("lines.ini", sec, k, n, f"the role {role} has no cat - give it one in [Cast]")
+
     # CUTSCENES - beats, actions, camera shots and the cats they frame, cast specs
     ini = read_ini(os.path.join(content, "cutscenes.ini"))
     need = {"Portrait": 1, "Behind": 1, "Over": 2, "Two": 2}
