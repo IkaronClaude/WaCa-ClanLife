@@ -10,7 +10,9 @@
 local Murmurs = {}
 
 local WaCa, log, Events, Lines
-local cfg = { on = true, radius = 450, chance = 35, entries = {} }
+local cfg = { on = true, radius = 450, chance = 35, every = 30, entries = {} }
+-- (the time of the last murmur: walking into camp, six cats murmured in four seconds - operator's log 2026-11-04)
+local lastSaid = -math.huge
 local said = {}                  -- cat name -> the day it was last asked (murmured or not)
 local steps = 0
 
@@ -63,6 +65,7 @@ end
 local function check()
     local me = pawn()
     if not me or (WaCa.InMenu and WaCa.InMenu()) then return end
+    if os.time() - lastSaid < cfg.every then return end
     local cats = WaCa.Cats and WaCa.Cats() or {}
     local mine = WaCa.PlayerClan and WaCa.PlayerClan() or nil
     local day = Events.Var("Day")
@@ -99,8 +102,9 @@ local function check()
     if not line then return end
     line = fill(line)
     line = line:gsub("^%l", string.upper)                  -- ("our leader ..." opening a line)
+    lastSaid = os.time()
     log("murmurs: %s (%s): %s", cat.name, table.concat(from, ", "), line)
-    WaCa.Emit("ShowLine", cat.name .. ": " .. line)
+    WaCa.SayOrShow(cat.name, line)
 end
 
 function Murmurs.Init(c)
@@ -111,6 +115,7 @@ function Murmurs.Init(c)
     cfg.on = (m.On or "1") ~= "0"
     cfg.radius = tonumber(m.Radius or "") or cfg.radius
     cfg.chance = tonumber(m.Chance or "") or cfg.chance
+    cfg.every = tonumber(m.Every or "") or cfg.every
     local names = {}
     for section in pairs(ini) do
         if type(section) == "string" and section:match("^Murmur%.") then names[#names + 1] = section end

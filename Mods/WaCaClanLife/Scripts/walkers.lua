@@ -931,8 +931,8 @@ local function tick()
                         local delay = said * 3000
                         said = said + 1
                         log("walkers: patrol %d meets your cat - %s%s: %s", m.patrol, who, i == 1 and " (leads)" or "", line)
-                        if delay == 0 then WaCa.Emit("ShowLine", who .. ": " .. line)
-                        else ExecuteInGameThreadWithDelay(delay, function() WaCa.Emit("ShowLine", who .. ": " .. line) end) end
+                        if delay == 0 then WaCa.SayOrShow(who, line)
+                        else ExecuteInGameThreadWithDelay(delay, function() WaCa.SayOrShow(who, line) end) end
                     end
                 end
             end
@@ -944,7 +944,7 @@ local function tick()
                     m.warned = true
                     local line = jobs.lines[math.random(#jobs.lines)]
                     log("walkers: %s, hunting, to your cat: %s", m.name, line)
-                    WaCa.Emit("ShowLine", m.name .. ": " .. line)
+                    WaCa.SayOrShow(m.name, line)
                 end
             end)
             if m.state == "wait" then

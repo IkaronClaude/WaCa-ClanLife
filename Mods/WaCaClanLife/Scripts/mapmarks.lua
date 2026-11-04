@@ -103,7 +103,9 @@ local function draw(m)
                 slot:SetAutoSize(false)
                 slot:SetSize({ X = SIZE, Y = SIZE })
                 slot:SetPosition({ X = -SIZE / 2, Y = -SIZE / 2 })
-                slot:SetZOrder(50)
+                -- (UNDER the game's own icons: a duty point's in-world marker draws the game's quest-hint leaf on the map,
+                -- and this circle covered it completely - operator 2026-11-04)
+                slot:SetZOrder(-1)
                 if tex and tex:IsValid() then img:SetBrushFromTexture(tex, false) end
                 shown[id] = (img:GetFullName():gsub("^%S+ ", ""))
             end

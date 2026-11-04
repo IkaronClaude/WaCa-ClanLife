@@ -61,6 +61,30 @@ local function groundUnder(x, y, z)
     return z
 end
 
+-- TALKING TO THEM (operator 2026-11-04: Nightkit said a line walking past but couldn't be talked to): the game's
+-- Interact prompt at each kit / newcomer (WaCa Core's InteractSpot); interacting, it meows and says its next line -
+-- lines.ini [Talk.Kit] for kits (Who = their rank: Kit, Apprentice), [Talk.Newcomer] for newcomers; {PLAYER} {NAME}
+local talkSpots = {}            -- kit name -> its interact spot
+local function talkTo(name)
+    local kit
+    for _, k in ipairs(kits) do if k.name == name then kit = k end end
+    if not kit then return end
+    local section = kit.adult and "Talk.Newcomer" or "Talk.Kit"
+    local ini = WaCa.ReadContent(cfg.modDir .. "/config/lines.ini", "lines") or {}
+    local lines = {}
+    for i = 1, 99 do
+        local l = (ini[section] or {})["Line" .. i]
+        if l and l ~= "" then lines[#lines + 1] = l end
+    end
+    local Events, Lines = require("events"), require("lines")
+    local line = #lines > 0 and Lines.Pick(section .. "." .. name, lines, Events.Var("Day")) or nil
+    pcall(function() Events.Run({ { kind = "Pose", value = "Meow", who = name } }) end)
+    if not line then log("kits: %s - nothing to say (lines.ini [%s] has no lines)", name, section) return end
+    line = line:gsub("{PLAYER}", WaCa.PlayerName and WaCa.PlayerName() or "you"):gsub("{NAME}", name)
+    log("kits: you talk to %s: %s", name, line)
+    WaCa.SayOrShow(name, line)
+end
+
 -- the kits by the nursery: a half ring in front of its door, facing the camp
 local function place()
     if #kits == 0 then return end
@@ -150,6 +174,14 @@ local function place()
         end
     end
     if #placed > 0 then log("kits: %s placed (kits by the nursery, newcomers about the camp)", table.concat(placed, ", ")) end
+    -- (and each can be talked to - see talkTo)
+    for _, kit in ipairs(kits) do
+        local a = spawned[kit.name] and StaticFindObject(spawned[kit.name])
+        if a and a:IsValid() and not (talkSpots[kit.name] and StaticFindObject(talkSpots[kit.name].path)) and WaCa.InteractSpot then
+            local name = kit.name
+            talkSpots[name] = WaCa.InteractSpot(a:K2_GetActorLocation(), function() talkTo(name) end, { reach = 220 })
+        end
+    end
 end
 
 local function keep()
@@ -320,6 +352,7 @@ end
 
 function Kits.Init(c)
     WaCa, log, DayNight = c.WaCa, c.log, c.DayNight
+    cfg.modDir = c.modDir
     local ini = WaCa.ReadContent(c.modDir .. "/config/kits.ini", "kits") or {}
     local k = ini["Kits"] or {}
     cfg.on = c.part("Kits", k.On)

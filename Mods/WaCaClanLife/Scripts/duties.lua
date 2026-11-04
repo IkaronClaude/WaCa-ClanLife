@@ -1020,7 +1020,9 @@ local function publishStatus()
     s.title = string.format("Day %d - %s", today.day, thirdLabel())
     if today.stage == "turnin" then
         local how = today.turnIn
-        s.activity = (NAMES[t and t.kind or "Free"] or "task"):gsub("^%l", string.upper) .. " done - turn it in:"
+        -- (in the clan's words, not a game's - operator 2026-11-04: "The den's bedding is done - turn it in" sounds
+        -- silly; "report to the deputy" makes sense)
+        s.activity = "Back to camp:"
         if how == "Camp" then
             s.activity = "You lead the clan's " .. thirdLabel():lower() .. "."
             s.where, s.goal = "The meeting place, next to your leader", "Give out the clan's tasks there"
@@ -1211,6 +1213,7 @@ local function pickKind(name)
 end
 
 local taskDone, thirdEnd, startThird, sleepNow, talkLine, setTalk, startWhenFree, waitingToStart
+local reportTarget, markReport          -- (defined with the report key below; taskDone above them uses them)
 
 local function cleanup(t)
     if t.ground then removeMarker(t.ground) mapClear("hunt") end
@@ -1219,6 +1222,7 @@ local function cleanup(t)
         elseif t.kind ~= "Bedding" and t.kind ~= "Water" then mapClear((t.kind == "Gather" and "gather" or "patrol") .. i) end
         removeMarker(pt)
         removeArea(pt.area)
+        if pt.spot then pt.spot:Remove() pt.spot = nil end
     end
     removeArea(t.area)
     if t.guardMarker then removeMarker({ marker = t.guardMarker }) end
@@ -1273,23 +1277,32 @@ local function reached(t, what, i)
         return
     end
     if what == "point" and t.kind == "Bedding" then
+        -- SHOW, NOT TELL (operator 2026-11-04: the duty ended on walking into the den, with a big text card; throwing
+        -- the moss out was walking to a spot): each half is the game's Interact prompt at its place (WaCa Core's
+        -- InteractSpot) and your cat doing it - the old moss bitten up in the den, a hole dug for it out of camp - the
+        -- half done ~2 s later, when the animation has played
         local pt = t.points[i]
-        if pt.done or (i == 2 and not t.points[1].done) then return end
-        pt.done = true
-        if i == 1 then
-            log("duties: the old bedding taken from the %s", t.den or "den")
-            if t.denMarker then removeMarker({ marker = t.denMarker }) t.denMarker = nil end
-            mapClear("den")
-            t.points[2].marker = marker(t.points[2])
-            mapMark("bedding", t.points[2], MARK_PATROL, "Throw the old bedding out")
-            card("You gather up the old, flattened moss. Carry it out of camp.")
-        else
-            log("duties: the old bedding thrown out of camp")
-            removeMarker(t.points[2])
-            mapClear("bedding")
-            taskDone(t)
-        end
-        statusSoon()
+        if pt.done or pt.busy or (i == 2 and not t.points[1].done) then return end
+        pt.busy = true
+        Events.Run({ { kind = "Pose", value = i == 1 and "Eat" or "Dig", who = "Player" }, { kind = "Wait", value = "2" } }, function()
+            pt.busy, pt.done = false, true
+            if pt.spot then pt.spot:Remove() pt.spot = nil end
+            if i == 1 then
+                log("duties: the old bedding taken from the %s", t.den or "den")
+                if t.denMarker then removeMarker({ marker = t.denMarker }) t.denMarker = nil end
+                mapClear("den")
+                local out = t.points[2]
+                out.marker = marker(out)
+                out.spot = WaCa.InteractSpot(out, function() reached(t, "point", 2) end, { reach = cfg.gatherReach * 2 })
+                mapMark("bedding", out, MARK_PATROL, "Bury the old bedding")
+            else
+                log("duties: the old bedding buried out of camp")
+                removeMarker(t.points[2])
+                mapClear("bedding")
+                taskDone(t)
+            end
+            statusSoon()
+        end, context())
         return
     end
     if what == "point" then
@@ -1432,6 +1445,8 @@ local function setUp(kind)
         else
             t.den = den.title ~= "" and den.title or "den"
             t.points = { { X = den.dest.X, Y = den.dest.Y, Z = den.dest.Z }, dump }
+            -- (the old moss: the game's Interact prompt inside the den - its door brings your cat to dest)
+            t.points[1].spot = WaCa.InteractSpot(t.points[1], function() reached(t, "point", 1) end, { reach = 400 })
             t.denMarker = marker(den.door)
             mapMark("den", den.door, MARK_DEN, t.den .. ": old bedding")
             log("duties: the old bedding - from the %s (inside at %.0f %.0f %.0f), out of camp at %.0f %.0f", t.den,
@@ -1577,6 +1592,7 @@ taskDone = function(t)
     end
     today.stage = "turnin"
     today.turnIn = turnIn
+    pcall(markReport)
     -- (short - operator 2026-10-28: too much text; the day panel carries the details)
     if t.lead or t.kind == "Free" then return end      -- (its card was the assignment's)
     local after = { Hunt = "Hunt done.", Patrol = "Patrol done.", Train = "Training done." }
@@ -1592,6 +1608,7 @@ end
 -- the turn-in happened: the third ends (Pile: the game's own contribution; Partner / a role: a talk with that cat)
 local function turnedIn(how)
     if not today or today.stage ~= "turnin" or today.turnIn ~= how then return false end
+    mapClear("report")
     log("duties: %s turned in (%s)", NAMES[today.task and today.task.kind or "Free"] or "task", how)
     WaCa.Emit("TaskTurnedIn", today.day, thirdName(), today.task and today.task.kind, how)
     if today.task and today.task.lead then cleanup(today.task) end
@@ -1604,7 +1621,7 @@ end
 -- deputy whose story line is used up has nothing to say), and a turn-in that can't be done would stall the clan's day.
 -- The cat to report to: the task's partner (by its path), else the nearest story cat whose role ends with the turn-in
 -- (Deputy matches ThunderClanDeputy ...), within ReportRadius.
-local function reportTarget(how)
+reportTarget = function(how, anywhere)
     local pawn = pc() and pc().Pawn
     if not (pawn and pawn:IsValid()) then return nil end
     local at, best, bd = pawn:K2_GetActorLocation(), nil, nil
@@ -1624,10 +1641,28 @@ local function reportTarget(how)
             if not fits then return end
             local p = a:K2_GetActorLocation()
             local d = math.sqrt((p.X - at.X) ^ 2 + (p.Y - at.Y) ^ 2)
-            if d <= cfg.reportRadius and (not bd or d < bd) then best, bd = a, d end
+            if (anywhere or d <= cfg.reportRadius) and (not bd or d < bd) then best, bd = a, d end
         end)
     end
     return best, bd
+end
+
+-- THE CAT TO REPORT TO, MARKED (operator 2026-11-04: no map mark for going back to it): on the map while your cat
+-- has to report - the deputy / medicine cat / partner wherever it is now, followed every 3 s (cats walk); the pile and
+-- the meeting place have marks of their own. Cleared on reporting (turnedIn) or when the stage moves on.
+local MARK_REPORT = { R = 1.0, G = 0.85, B = 0.2, A = 1 }
+markReport = function()
+    local how = today and today.stage == "turnin" and today.turnIn
+    if not how or how == "Pile" or how == "Camp" or how == "None" then mapClear("report") return end
+    local cat = reportTarget(how, true)
+    if not cat then mapClear("report") return end
+    local name = (WaCa.CatName and WaCa.CatName(cat)) or tostring(how):gsub("(%l)(%u)", "%1 %2"):lower()
+    mapMark("report", cat:K2_GetActorLocation(), MARK_REPORT, "Report to " .. name)
+    local day, stage = today.day, today.stage
+    ExecuteInGameThreadWithDelay(3000, function()
+        if today and today.day == day and today.stage == stage and today.turnIn == how then pcall(markReport)
+        else mapClear("report") end
+    end)
 end
 
 -- the game's interact (Player_Interact) at the meeting place: the tasks are given out, the third ends
@@ -2074,9 +2109,10 @@ local function where()
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.reach then reached(t, "point", i) end end
     elseif t.kind == "Water" and t.points then
         if not t.points[1].done and dist(t.points[1]) <= cfg.gatherReach * 2 then reached(t, "point", 1) end
-    elseif t.kind == "Bedding" and t.points then
+    elseif t.kind == "Bedding" and t.points and not t.points[1].spot then
+        -- (only when the Interact spot couldn't be made: arriving does it, as before)
         if not t.points[1].done and dist(t.points[1]) <= 700 then reached(t, "point", 1)
-        elseif t.points[1].done and not t.points[2].done and dist(t.points[2]) <= cfg.gatherReach * 2 then reached(t, "point", 2) end
+        elseif t.points[1].done and not t.points[2].done and not t.points[2].spot and dist(t.points[2]) <= cfg.gatherReach * 2 then reached(t, "point", 2) end
     elseif t.kind == "Gather" and t.points then
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.gatherReach then reached(t, "point", i) end end
     elseif t.kind == "Train" then
@@ -2454,19 +2490,43 @@ function Duties.Init(c)
     if kept and kept.key and kept.text and WaCa.GetText(kept.key) ~= kept.text then WaCa.SetText(kept.key, kept.text) end
     -- the deputy's own words (the game has only "nothing new for you" for a cat whose story has nothing to say): while
     -- a talk with the deputy is open, that line is the clan loop's - your report, or a reminder of your task
-    WaCa.On("ScreenShown", function(screen)
+    -- WHO YOUR CAT TALKS TO: the talk screen's NpcRef - or, a talk screen without one (the game's patch 1.1 has a new
+    -- WBP_QuestGiver_Dialogue2: the deputy said the game's "nothing new for you" and the talk handed nothing in,
+    -- operator 2026-11-04), the nearest story cat within ReportRadius of your cat. Logged which, once per talk.
+    local function talkPartner(screen)
         local ok, npc = pcall(function() return screen.NpcRef end)
-        if ok and npc and npc:IsValid() then setTalk(talkLine(npc)) end
+        if ok and npc and npc:IsValid() then return npc, "NpcRef" end
+        local cls = screen:GetClass():GetFName():ToString()
+        if not cls:find("Dialogue") then return nil end
+        local pawn = pc() and pc().Pawn
+        if not (pawn and pawn:IsValid()) then return nil end
+        local at, best, bd = pawn:K2_GetActorLocation(), nil, nil
+        for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
+            pcall(function()
+                if not a:IsValid() or a.bHidden or not (a.narrativeRole and a.narrativeRole > 0) then return end
+                local q = a:K2_GetActorLocation()
+                local d = math.sqrt((q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2)
+                if d <= cfg.reportRadius and (not bd or d < bd) then best, bd = a, d end
+            end)
+        end
+        return best, best and string.format("the nearest story cat (%s has no NpcRef)", cls) or nil
+    end
+    local talking
+    WaCa.On("ScreenShown", function(screen)
+        local npc, how = talkPartner(screen)
+        if not npc then return end
+        talking = screen:GetFName():ToString()
+        log("duties: your cat talks to %s (%s)", (WaCa.CatName and WaCa.CatName(npc)) or "?", how)
+        setTalk(talkLine(npc))
     end)
     WaCa.On("ScreenHidden", function(screen)
-        local ok, npc = pcall(function() return screen.NpcRef end)
-        if ok and npc then setTalk(nil) end
+        if talking and screen:GetFName():ToString() == talking then talking = nil setTalk(nil) end
     end)
     WaCa.On("ScreenShown", function(screen)
         local how = today and today.stage == "turnin" and today.turnIn
         if not how or how == "Pile" or how == "None" then return end
-        local ok, npc = pcall(function() return screen.NpcRef end)
-        if not (ok and npc and npc:IsValid()) then return end
+        local npc = talkPartner(screen)
+        if not npc then return end
         local t = today.task
         if how == "Partner" then
             if t and t.path and pathOf(npc) == t.path then turnedIn("Partner") end

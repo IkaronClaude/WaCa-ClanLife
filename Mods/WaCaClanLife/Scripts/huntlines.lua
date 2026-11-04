@@ -78,7 +78,7 @@ local function comment(list, kind)
     local name = WaCa.PlayerName and WaCa.PlayerName() or "you"
     line = line:gsub("{PLAYER}", name):gsub("{PREY}", kindName(kind))
     log("hunt lines: %s (%s): %s", who.name, why, line)
-    WaCa.Emit("ShowLine", who.name .. ": " .. line)
+    WaCa.SayOrShow(who.name, line)
 end
 
 function HuntLines.Init(c)
