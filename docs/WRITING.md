@@ -34,6 +34,10 @@ Use only the files you need. A pack never edits anyone else's files; everything 
 makes a pack that already works - a role for that cat of your save, an event when your cat meets it, a short cutscene and
 the lines it murmurs - every file commented. Restart the game, walk up to the cat, then change it into your own story.
 
+**Proofread without the game:** `python tools\check_pack.py <your pack folder>` (from the pack's Mods folder, or add
+`--mods <the game's ue4ss\Mods>`) - misspelled steps and actions, camera shots short of cats, roles nobody plays,
+`Reach:` mistakes, each with its file and line. The in-game story check (section 10) checks the rest against a real save.
+
 ## 2. Clan events (`clanevents.ini`)
 
 An event is a short scene that happens at a time of day, by chance or when something happens:
