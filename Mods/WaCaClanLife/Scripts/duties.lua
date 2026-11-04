@@ -1966,6 +1966,17 @@ local function reachCheck(pawn)
     local at
     for _, e in ipairs(cfg.clanEvents) do
         local spec = tostring(e.when or ""):match("^Reach:%s*(.+)$")
+        -- (a role whose cat is brought in only for the scenes that ask for it - [Cast] S:loner = Rogue:Quill /
+        -- Clan:<Clan> - is never about to meet: said once, then skipped; library exercise 2026-11-04 - it was
+        -- looked up on every step and logged as 'no such cat about')
+        local brought = spec and spec:match("^S:") and (Events.CastSpecs and Events.CastSpecs() or {})[spec]
+        if type(brought) == "string" and (brought:match("^Rogue") or brought:match("^Clan:")) then
+            if not e.warned then
+                e.warned = true
+                log("duties: event %s - Reach: %s can't happen: its cat (%s) is brought in only for scenes; meet a cat of the world, or a place", e.name, spec, brought)
+            end
+            spec = nil
+        end
         if spec then
             local place = reachPlace(spec)
             if not place and not e.warned then
