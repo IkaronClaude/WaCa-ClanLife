@@ -311,6 +311,21 @@ function StoryCheck.Run()
             end
         end
     end)
+    -- (When = Reach: <place or cat> - library exercise 2026-11-04: a role nobody plays, or one whose cat exists only
+    -- inside scenes - Rogue: / Clan: - can never be met; a coordinate triple must read as numbers)
+    for section, sec in pairs(loaded.clanevents or {}) do
+        local spec = type(sec) == "table" and tostring(sec.When or ""):match("^%s*Reach:%s*(.-)%s*$")
+        if spec and spec ~= "" then
+            local role = spec:match("^(S:[%w_]+)$")
+            if role and not cast[role] then
+                problem("clanevents", section, "When", "the role " .. role .. " has no cat - give it one in [Cast]")
+            elseif role and type(cast[role]) == "string" and (cast[role]:match("^Rogue") or cast[role]:match("^Clan:")) then
+                warning("clanevents", section, "When", role .. " is played by " .. cast[role] .. ", brought in only for scenes - it can't be met")
+            elseif spec:match("^%-?[%d.]+[%s,]") and not spec:match("^%-?[%d.]+[%s,]+%-?[%d.]+[%s,]+%-?[%d.]+$") then
+                warning("clanevents", section, "When", "'" .. spec .. "' looks like a place but isn't x y z")
+            end
+        end
+    end
     -- (pass 2: the conditions - readable, and every variable they test set somewhere)
     for _, e in ipairs(tested) do
         local names, bad = condVars(e[4])
