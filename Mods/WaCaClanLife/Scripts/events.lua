@@ -324,6 +324,7 @@ local bound = {}             -- "S:name" -> the bound cat's object path
 local castSpecs = {}         -- "S:name" -> who plays it (events.ini [Cast]: a cat's name, a part, E:<role>)
 local castMissed = {}        -- "S:name" -> true once its miss was logged (the retries stay quiet)
 local castRetrying = false
+local newcomerWait = nil      -- { key = "S:role", go = fn }: a Newcomer step waiting for its role to be bound
 
 -- a newcomer playing a story role (kits.lua): the role's cat is found by the newcomer's name from now on
 local function newcomerCast(key, name)
@@ -341,6 +342,8 @@ function Events.BindRole(key, cat)
     pcall(function() who = WaCa.CatName(StaticFindObject(cat)) or cat end)
     log("events: role %s = %s", key, tostring(who))
     WaCa.Emit("RoleBound", key, cat)
+    local w = newcomerWait
+    if w and w.key == key then newcomerWait = nil pcall(w.go) end
     -- (every bound role for other mods - WaCa Cutscenes casts S:<role> from it)
     WaCa.Publish("roles.cast", bound, true)
 end
@@ -1900,8 +1903,20 @@ local function runStep(s, ctx, nextStep, stop, jump)
         -- (Newcomer: <clanmate> [as S:<role>] - a new cat joins the clan, taking after that clanmate - kits.lua; "as
         -- S:<role>": it plays that story role from now on - later scenes / cutscenes cast it by the role)
         local like, castAs = tostring(s.value):match("^%s*(.-)%s+as%s+(S:[%w_]+)%s*$")
+        if castAs then
+            -- (the next step waits till the role is the NEWCOMER's - the full sweep 2026-11-04: NewApprenticeJoins'
+            -- cutscene started with the role's previous cat, the binding came a moment later; 10 s at most)
+            local w = { key = castAs, go = nextStep }
+            newcomerWait = w
+            ExecuteInGameThreadWithDelay(10000, function()
+                if newcomerWait ~= w then return end
+                newcomerWait = nil
+                log("events: the newcomer for %s wasn't cast in 10 s - going on", castAs)
+                w.go()
+            end)
+        end
         WaCa.Emit("Newcomer", like or s.value, castAs)
-        nextStep()
+        if not castAs then nextStep() end
     elseif k == "Activity" then
         -- (Activity: <name> @ <who> - that cat does one of activities.ini's [Activity.*] now, joinable with the Join key;
         -- library exercise 2026-11-03)
