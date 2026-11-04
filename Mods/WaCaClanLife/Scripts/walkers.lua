@@ -910,6 +910,7 @@ local function tick()
                     local raw = (#fresh > 0 and fresh or pool)[math.random(#fresh > 0 and #fresh or #pool)]
                     used[raw] = true
                     local line = raw:gsub("{PLAYER}", player):gsub("{LEADER}", m.name)
+                    if Events and Events.Fill then line = Events.Fill(line) end      -- ({S:<role>}, a part, a name)
                     local delay = said * 3000
                     said = said + 1
                     log("walkers: patrol %d meets your cat - %s%s: %s", m.patrol, who, i == 1 and " (leads)" or "", line)

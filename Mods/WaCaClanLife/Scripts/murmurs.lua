@@ -87,6 +87,7 @@ local function check()
     if not line then return end
     local n = names(cat, cats)
     line = line:gsub("{(%u+)}", function(k) return n[k] or ("{" .. k .. "}") end)
+    line = Events.Fill and Events.Fill(line) or line         -- ({S:storyteller}, {Leader}, a name: the cat's name)
     line = line:gsub("^%l", string.upper)                  -- ("our leader ..." opening a line)
     log("murmurs: %s (%s): %s", cat.name, table.concat(from, ", "), line)
     WaCa.Emit("ShowLine", cat.name .. ": " .. line)

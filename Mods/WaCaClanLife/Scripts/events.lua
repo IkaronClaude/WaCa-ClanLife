@@ -1757,9 +1757,31 @@ local function crossHook(name, ctx, continue)
     end)
 end
 
-local function fill(text, ctx)
-    return (tostring(text):gsub("{(%u+)}", function(k) return ctx and ctx[k] ~= nil and tostring(ctx[k]) or "{" .. k .. "}" end))
+-- A LINE'S NAMES (library pre-work 2026-11-04: a pack could cast S:storyteller, but no line of ours could NAME her -
+-- "{S:storyteller}" went on screen as typed). {UPPERCASE} = the line's own values (PLAYER, NAME ...) as before; any other
+-- {key} is a cat - S:<role>, E:<role>, a part (Leader, Deputy) or a name, by Events.Who - and becomes its name. A key
+-- with no such cat about stays as typed and is logged once.
+local fillMissed = {}
+function Events.Fill(text, ctx)
+    return (tostring(text or ""):gsub("{([%w:_ ]+)}", function(k)
+        if k:match("^%u+$") then
+            if ctx and ctx[k] ~= nil then return tostring(ctx[k]) end
+            if k == "PLAYER" and WaCa.PlayerName then return WaCa.PlayerName() end
+            return nil
+        end
+        local ok, a = pcall(Events.Who, k)
+        local name = ok and WaCa.Live(a) and WaCa.CatName(a) or nil
+        -- (a role played by a cat brought in for it - S:loner = Rogue:Quill - carries no name ids: its cast line's name)
+        if ok and a and not name and type(castSpecs[k]) == "string" then name = castSpecs[k]:match(":%s*(.+)$") or castSpecs[k] end
+        if name and name ~= "" then return name end
+        if not fillMissed[k] then
+            fillMissed[k] = true
+            log("events: a line names {%s} - no such cat about; left as written", k)
+        end
+        return nil
+    end))
 end
+local function fill(text, ctx) return Events.Fill(text, ctx) end
 
 local function after(seconds, fn) ExecuteInGameThreadWithDelay(math.max(1, math.floor(seconds * 1000)), fn) end
 

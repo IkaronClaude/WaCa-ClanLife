@@ -107,6 +107,11 @@ Your scenes then say `@ S:herbalist`, and your cutscenes say `B = S:loner`. A ro
 (`Clan:ShadowClan`) is a cat made up from the save's cats the first time; it is kept with the save, so your envoy is the
 same cat in every scene after.
 
+**In a line, any of these in braces becomes the cat's name:** `{S:loner}`, `{Leader}`, `{Nightheart}` - in cards,
+murmurs, patrol lines and cutscene lines alike (`Say: A1 = Our border is closed to you, {S:loner}.`). So a line names
+the ROLE, and stays right whoever plays it. A cutscene can also give a role as the speaker: `Say: S:loner = ...`. A name
+with no such cat about stays as you wrote it, and the log says so once.
+
 ## 5. Conditions and story variables
 
 `Require = ...` and `If: ...` take conditions, comma-separated, all of which must hold:
