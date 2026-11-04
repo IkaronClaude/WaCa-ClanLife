@@ -498,6 +498,7 @@ local POSES = {
     Sit = { "AM_CatMaster_SimpleSit" }, Lie = { "AM_Interact_Sleep_1" },
     Sleep = { "AM_Interact_Sleep_1", "AM_Interact_Sleep_2", "AM_Interact_Sleep_3" }, Eat = { "AM_Interact_Bite_1" },
     Sniff = { "AM_Interact_Sniffing" }, Meow = { "AM_Meow" }, Play = { "AM_Interact_Play" }, Groom = { "AM_Interact_Sharpen" },
+    Dig = { "AM_Interact_Dig" },
 }
 local MONTAGES = "/Game/Art/Characters/CatMaster/Animations/Montages/"
 local FADE = 0.8
@@ -2328,6 +2329,24 @@ function Events.Init(c)
             ExecuteInGameThread(function() newcomerCast(tostring(key), tostring(name)) end)
         end
     end)
+    -- (IN THE WORLD ONLY - operator 2026-11-04: Hunting's role question popped up on the Select Your Cat screen. A scene
+    -- asked for while the game's HUD isn't up - the menus, a level loading - waits, and plays once the HUD is back)
+    local hudUp, waiting = false, {}
+    WaCa.On("ScreenShown", function(screen)
+        if not screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then return end
+        hudUp = true
+        if #waiting == 0 then return end
+        ExecuteInGameThreadWithDelay(3000, function()
+            if not hudUp then return end
+            local list = waiting
+            waiting = {}
+            log("events: %d scene(s) asked for in the menus - playing now, in the world", #list)
+            for _, steps in ipairs(list) do Events.Play(steps) end
+        end)
+    end)
+    WaCa.On("ScreenHidden", function(screen)
+        if screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then hudUp = false end
+    end)
     WaCa.On("PlayScene", function(text)
         local steps = { context = {} }                  -- (a scene's own context: its gathered cats, its place)
         for line in tostring(text or ""):gmatch("[^|]+") do
@@ -2335,7 +2354,13 @@ function Events.Init(c)
             if st then steps[#steps + 1] = st end
         end
         log("events: a scene asked for - %d step(s): %s", #steps, tostring(text))
-        if #steps > 0 then ExecuteInGameThread(function() Events.Play(steps) end) end
+        if #steps == 0 then return end
+        if not hudUp then
+            waiting[#waiting + 1] = steps
+            log("events: ... not in the world (no HUD) - it plays once you are")
+            return
+        end
+        ExecuteInGameThread(function() Events.Play(steps) end)
     end)
     -- (WaCa Cutscenes: one playing holds the cards; the Cutscene step goes on when its own is over)
     WaCa.On("CutsceneStarted", function(name)

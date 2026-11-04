@@ -82,12 +82,22 @@ local function check()
             from[#from + 1] = e.name
         end
     end
+    local n = names(cat, cats)
+    local function fill(l)
+        l = l:gsub("{(%u+)}", function(k) return n[k] or ("{" .. k .. "}") end)
+        return Events.Fill and Events.Fill(l) or l           -- ({S:storyteller}, {Leader}, a name: the cat's name)
+    end
+    -- (no cat talks about itself as someone else - operator 2026-11-04: "Hollystar: Hollystar has been up since dawn
+    -- again", the leader given the line about {LEADER}; {NAME} - its own name - is meant)
+    local own = {}
+    for _, l in ipairs(lines) do
+        if not fill((l:gsub("{NAME}", ""))):find(cat.name, 1, true) then own[#own + 1] = l end
+    end
+    lines = own
     if #lines == 0 then return end
     local line = Lines.Pick("Murmur." .. cat.name, lines, day)
     if not line then return end
-    local n = names(cat, cats)
-    line = line:gsub("{(%u+)}", function(k) return n[k] or ("{" .. k .. "}") end)
-    line = Events.Fill and Events.Fill(line) or line         -- ({S:storyteller}, {Leader}, a name: the cat's name)
+    line = fill(line)
     line = line:gsub("^%l", string.upper)                  -- ("our leader ..." opening a line)
     log("murmurs: %s (%s): %s", cat.name, table.concat(from, ", "), line)
     WaCa.Emit("ShowLine", cat.name .. ": " .. line)

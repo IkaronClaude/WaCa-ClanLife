@@ -910,17 +910,30 @@ local function tick()
                 end
                 if pool and #pool > 0 then
                     -- (not a line another cat of this patrol just said, while the pool has others)
-                    local fresh = {}
-                    for _, l in ipairs(pool) do if not used[l] then fresh[#fresh + 1] = l end end
-                    local raw = (#fresh > 0 and fresh or pool)[math.random(#fresh > 0 and #fresh or #pool)]
-                    used[raw] = true
-                    local line = raw:gsub("{PLAYER}", player):gsub("{LEADER}", m.name)
-                    if Events and Events.Fill then line = Events.Fill(line) end      -- ({S:<role>}, a part, a name)
-                    local delay = said * 3000
-                    said = said + 1
-                    log("walkers: patrol %d meets your cat - %s%s: %s", m.patrol, who, i == 1 and " (leads)" or "", line)
-                    if delay == 0 then WaCa.Emit("ShowLine", who .. ": " .. line)
-                    else ExecuteInGameThreadWithDelay(delay, function() WaCa.Emit("ShowLine", who .. ": " .. line) end) end
+                    local function fill(l)
+                        l = l:gsub("{PLAYER}", player):gsub("{LEADER}", m.name)
+                        if Events and Events.Fill then l = Events.Fill(l) end        -- ({S:<role>}, a part, a name)
+                        return l
+                    end
+                    -- (nor a line naming the speaker itself - the murmurs' "Hollystar: Hollystar has been up since
+                    -- dawn", operator 2026-11-04)
+                    local fresh, own = {}, {}
+                    for _, l in ipairs(pool) do
+                        if not fill(l):find(who, 1, true) then
+                            own[#own + 1] = l
+                            if not used[l] then fresh[#fresh + 1] = l end
+                        end
+                    end
+                    local raw = #fresh > 0 and fresh[math.random(#fresh)] or #own > 0 and own[math.random(#own)] or nil
+                    if raw then used[raw] = true end
+                    local line = raw and fill(raw)
+                    if line then
+                        local delay = said * 3000
+                        said = said + 1
+                        log("walkers: patrol %d meets your cat - %s%s: %s", m.patrol, who, i == 1 and " (leads)" or "", line)
+                        if delay == 0 then WaCa.Emit("ShowLine", who .. ": " .. line)
+                        else ExecuteInGameThreadWithDelay(delay, function() WaCa.Emit("ShowLine", who .. ": " .. line) end) end
+                    end
                 end
             end
         elseif m.hunting and not m.warned and not paused and #jobs.lines > 0 then
@@ -1287,10 +1300,13 @@ function Walkers.Stage(a, spot, faceYaw, speed)
         log("walkers: %s wasn't drawn - shown while it is in the scene", nameOf(a) or "?")
     end
     local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+    -- (a party cat in a scene goes with you again after it - Unstage; VM 2026-11-04: Nightheart led your cat, then walked
+    -- back to its camp spot and left the party for good)
+    local wasFollow = m and (m.follow and { slot = m.slot, escort = m.escort } or m.wasFollow) or nil
     movers[path] = { home = m and m.home or { X = q.X, Y = q.Y, Z = q.Z },
                      homeRot = m and m.homeRot or { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll },
                      legs = { { X = spot.X, Y = spot.Y, Z = spot.Z } }, leg = 1, state = "walk", staged = true, speed = speed,
-                     faceYaw = faceYaw, name = nameOf(a) or "?", shown = shown }
+                     faceYaw = faceYaw, name = nameOf(a) or "?", shown = shown, wasFollow = wasFollow }
     playWalk(a, true)
     log("walkers: %s walks to its seat (%.1f m)", movers[path].name,
         math.sqrt((spot.X - q.X) ^ 2 + (spot.Y - q.Y) ^ 2) / 100)
@@ -1317,6 +1333,12 @@ function Walkers.Unstage(a)
     m.staged, m.arrived = false, false
     -- (a cat that led your cat walks home on its own - it kept "waiting for you" on the way home, VM 2026-11-01)
     m.lead, m.leadWaiting, m.onArrive = false, false, nil
+    if m.wasFollow and party.follow and party.outside then
+        local f = m.wasFollow
+        movers[path] = { follow = true, slot = f.slot, escort = f.escort, name = m.name, home = m.home, homeRot = m.homeRot }
+        log("walkers: %s goes with you again (the party)", m.name)
+        return
+    end
     m.legs, m.leg, m.state = { m.home }, 1, "walk"
     playWalk(a, true)
 end
