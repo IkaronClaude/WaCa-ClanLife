@@ -94,6 +94,9 @@ function Hud.Init(c)
     cfg.on = (h.On or "1") ~= "0"
     cfg.below = tonumber(h.Below or "") or cfg.below
     cfg.right = tonumber(h.Right or "") or cfg.right
+    -- (the goal line's icon - the same one the duty's points show on the map and minimap, so the mark's meaning is
+    -- plain: operator 2026-11-04)
+    cfg.icon = (h.DutyIcon or "") ~= "" and h.DutyIcon or nil
     if not cfg.on then
         log("hud: off (clanlife.ini [Hud] On = 0)")
         return
@@ -102,7 +105,7 @@ function Hud.Init(c)
     -- Core that hasn't it: library exercise 2026-11-02, a second mod's panel would have gone over this one)
     if WaCa.HudPanel then
         WaCa.Subscribe("clan.status", function(s)
-            if type(s) == "table" then s.order = 0 end         -- (the clan's day first, under the game's quest)
+            if type(s) == "table" then s.order, s.icon = 0, cfg.icon end   -- (the clan's day first, under the game's quest)
             WaCa.HudPanel("WaCaClanLife.day", s)
         end)
         log("hud: the day status goes to WaCa Core's panels")

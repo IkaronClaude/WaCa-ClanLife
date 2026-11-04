@@ -1586,6 +1586,15 @@ taskDone = function(t)
     -- Pile = the catch onto the fresh-kill pile, Partner = talk to the cat the task was with (training: the mentor),
     -- a role (Deputy, Leader, MedicineCat ...) = report to that cat, None = done is the end
     local turnIn = (t.lead and "Camp") or cfg.turnIn[t.kind] or "None"
+    -- (an APPRENTICE reports to its mentor, not the deputy - operator 2026-11-04. The game names the mentor only in
+    -- its story's lines, so the mentor is a story role: S:mentor in a pack's [Cast]; none cast = the deputy)
+    if turnIn == "Deputy" then
+        local ok, r, rank = pcall(ranks)
+        if ok and rank and r and r.Apprentice and rank <= r.Apprentice then
+            local okW, mentor = pcall(Events.Who, "S:mentor")
+            if okW and mentor and mentor:IsValid() then turnIn = "S:mentor" end
+        end
+    end
     if turnIn == "None" then
         today.stage = "turnin"
         return thirdEnd()
