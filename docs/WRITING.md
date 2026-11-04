@@ -70,6 +70,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Cutscene: <Name>` | plays a cutscene (section 6); the scene waits for it |
 | `Lead: <place> @ <who>` | a cat walks your cat somewhere - it comes to you, waits if you fall behind; places: `Den:<the game's den name>` (`Den:Apprentice's den`), `Zone:<code>`, `Pile`, a cat's name |
 | `Dialogue: <id> @ <who>` | one of the game's own conversations (ids in `events-dialogues.txt`) |
+| `Duty: <name>` | gives your cat that duty now - a clan duty (`Hunt`, `Patrol` ...) or your pack's own `[Duty.<Name>]` (`Duty: HerbRound`) |
 | `Bond: <points> @ <who>` | your bond with a cat grows (or shrinks) |
 | `Party: <story cats>` | who fights beside your cat from now on (`Party: Toadfrost, E:RiverClanDeputy`; `Party: none` = the game's own) - kept with the save |
 | `Set: <var> = <value>` | sets a story variable (section 5) - `Set: X = Day + 2` works too |
@@ -315,6 +316,10 @@ MinRank = Apprentice                                    ; (and MaxRank)
 [Task.HerbRound]
 TurnIn = MedicineCat                                    ; Pile, Partner, a role, None
 ```
+
+A cat point (`S:herbalist`) is called by the cat's name on its own; `PointName` and `Card` lines can name cats too -
+`Card3 = {S:herbalist} takes the mouse.` A clan event can give the duty there and then: `Step2 = Duty: HerbRound`. The log
+line "HerbRound - 3 point(s): ..." says where each point landed, so a point in the wrong place is easy to spot.
 
 ## 9. Several packs together
 

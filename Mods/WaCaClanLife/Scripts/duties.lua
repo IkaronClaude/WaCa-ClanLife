@@ -121,7 +121,7 @@ local function pc()
 end
 
 -- (one queue for every card of the mod - events.lua: never two on screen at once)
-local function card(text) Events.Card(text, cfg.seconds) end
+local function card(text) Events.Card(Events.Fill and Events.Fill(text) or text, cfg.seconds) end
 -- a card for a key press that did nothing yet (at most one every 4 s: a held key repeats)
 local lastFeedback = 0
 local function feedback(text)
@@ -399,6 +399,27 @@ local function pileComponent()
     for _, comp in ipairs(FindAllOf("SwtAdventureFreshKillPileComponent") or {}) do
         if comp:IsValid() then return comp end
     end
+end
+
+-- WHERE the pile is: the game's pile cat (BP_Quest_Giver_FreshKill) of your camp - the nearest to the camp's middle.
+-- (The pile COMPONENT lives on the game state, an actor at the world's origin: a duty's 'Pile' point sat at 0 0 and
+-- could never be reached - library exercise 2026-11-04, HerbRound given by a story.)
+local function pilePlace()
+    local ok, camp = pcall(function() return Duties.Camp() end)
+    local ref = ok and camp and camp.middle
+    if not ref then
+        local p = pc() and WaCa.Live(pc().Pawn)
+        ref = p and p:K2_GetActorLocation()
+    end
+    local best, bd
+    for _, a in ipairs(FindAllOf("BP_Quest_Giver_FreshKill_C") or {}) do
+        local okq, q = pcall(function() return WaCa.Live(a) and a:K2_GetActorLocation() end)
+        if okq and q then
+            local d = ref and ((q.X - ref.X) ^ 2 + (q.Y - ref.Y) ^ 2) or 0
+            if not bd or d < bd then best, bd = q, d end
+        end
+    end
+    return best and { X = best.X, Y = best.Y, Z = best.Z } or nil
 end
 
 -- clanmates on the patrol (tickets.md 7): the nearest clan cats walk with you (follow.lua - they hold back while you
@@ -1316,12 +1337,7 @@ local function dutyPoint(spec)
         end
         return nil
     end
-    if spec == "Pile" then
-        local c = pileComponent()
-        local owner = c and WaCa.Live(c:GetOwner())
-        local q = owner and owner:K2_GetActorLocation()
-        return q and { X = q.X, Y = q.Y, Z = q.Z } or nil
-    end
+    if spec == "Pile" then return pilePlace() end
     local zone = spec:match("^Zone:%s*(.+)$")
     if zone then return Duties.ZonePlace(zone) end
     local x, y, z = spec:match("^([%-%d%.]+)[%s,]+([%-%d%.]+)[%s,]+([%-%d%.]+)$")
@@ -1344,12 +1360,23 @@ local function setUp(kind)
                 t.kind, t.points, t.custom = "Free", nil, nil
                 return t
             end
-            q.name = c.names[i] or spec
+            -- (names by role - library exercise 2026-11-04: HerbRound had to hardcode 'Mossfeather' for S:herbalist,
+            -- and a point with no PointName showed its key 'S:herbalist' on screen: a cat point is the cat's name,
+            -- a PointName / Card may say {S:herbalist})
+            q.name = c.names[i] and Events.Fill(c.names[i]) or nil
+            if not q.name and not spec:match("^Den:") and not spec:match("^Zone:") and spec ~= "Pile" and not spec:match("^%-?%d") then
+                local named = Events.Fill("{" .. spec .. "}")
+                if named ~= "{" .. spec .. "}" then q.name = named end
+            end
+            q.name = q.name or spec
             t.points[i] = q
         end
         t.points[1].marker = marker(t.points[1])
         mapMark("duty1", t.points[1], MARK_PATROL, c.title .. ": " .. t.points[1].name)
-        log("duties: %s - %d point(s): %s", kind, #t.points, table.concat(c.points, "; "))
+        -- (where each point resolved to - a writer's Den:/cat point that lands somewhere odd shows here)
+        local at = {}
+        for i, q in ipairs(t.points) do at[i] = string.format("%s = %s (%.0f %.0f)", c.points[i], q.name, q.X, q.Y) end
+        log("duties: %s - %d point(s): %s", kind, #t.points, table.concat(at, "; "))
         return t
     end
     if kind == "Hunt" then
@@ -1913,11 +1940,7 @@ local function reachPlace(spec)
     spec = tostring(spec or ""):match("^%s*(.-)%s*$")
     local x, y, z = spec:match("^(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)$")
     if x then return { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) } end
-    if spec == "Pile" then
-        local pile = pileComponent()
-        local owner = pile and WaCa.Live(pile:GetOwner())
-        return owner and owner:K2_GetActorLocation() or nil
-    end
+    if spec == "Pile" then return pilePlace() end
     if not reachState.places then
         reachState.places = {}
         pcall(function()
@@ -2178,14 +2201,18 @@ function Duties.Init(c)
         ExecuteInGameThread(function() pcall(startThird, p[1], p[2]) end)
     end)
     -- (a test: this task now, whatever the plan says - the VM checks a patrol without waiting for one)
-    WaCa.On("WaCaDutiesForce", function(kind)
-        if not today or not KINDS[tostring(kind)] then log("duties: can't force '%s'", tostring(kind)) return end
+    -- (a test forces a task - or a STORY gives one: a clan event's "Duty: HerbRound" step, WaCa.Emit("GiveDuty",
+    -- kind); library exercise 2026-11-04: a scene couldn't say "do the herb round now")
+    local function giveNow(kind, who)
+        if not today or not KINDS[tostring(kind)] then log("duties: can't give the task '%s' (%s)", tostring(kind), who) return end
         if today.task then pcall(function() companionsLeave(today.task.companions) end) end
         forcedKind = tostring(kind)
-        log("duties: a test forces the task %s now", forcedKind)
+        log("duties: %s gives the task %s now", who, forcedKind)
         local ok, err = pcall(assign)
-        if not ok then log("duties: forced task failed (%s)", tostring(err)) end
-    end)
+        if not ok then log("duties: the given task failed (%s)", tostring(err)) end
+    end
+    WaCa.On("WaCaDutiesForce", function(kind) giveNow(kind, "a test") end)
+    WaCa.On("GiveDuty", function(kind) giveNow(kind, "a story") end)
     WaCa.On("WaCaDutiesSelfTest", function()
         local ok, err = pcall(dutiesSelfTest)
         if not ok then log("duties: self-test failed to run: %s", tostring(err)) end

@@ -1872,6 +1872,10 @@ local function runStep(s, ctx, nextStep, stop, jump)
         nextStep()
     elseif k == "Card" then
         showCard(fill(s.value, ctx), cfg.cardSeconds, nextStep)
+    elseif k == "Duty" then
+        -- (Duty: <kind> - the scene gives your cat that duty now: one of the clan's or a pack's [Duty.<Name>])
+        WaCa.Emit("GiveDuty", tostring(s.value):match("^%s*(.-)%s*$"))
+        nextStep()
     elseif k == "Gather" then
         Events.Gather(tonumber(s.value) or 5, s.who, ctx, nextStep)
     elseif k == "Groups" then
