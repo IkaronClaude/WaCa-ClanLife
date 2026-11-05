@@ -515,21 +515,41 @@ local function goesToGatherings(a)
 end
 
 function Walkers.Patrol(n, points, why, onBack, opts)
-    if not looping or (n or 0) <= 0 or #(points or {}) == 0 then return nil end
+    if not looping or (n or 0) <= 0 or #(points or {}) == 0 then
+        if not looping then log("walkers: patrol (%s) - the walkers' loop isn't running", why or "?") end
+        return nil
+    end
+    local skipped = { unseen = 0, moving = 0, kind = 0, far = 0 }
     local mid
     pcall(function() mid = Duties.Camp().middle end)
     local myClan = WaCa.PlayerClan and WaCa.PlayerClan() or nil
     local cats = {}
     for _, a in ipairs(FindAllOf("SwtAdventureQuestActor") or {}) do
         pcall(function()
-            if not (a:IsValid() and shown(a)) or movers[pathOf(a)] then return end
+            if not (a:IsValid() and shown(a)) then skipped.unseen = skipped.unseen + 1 return end
+            if movers[pathOf(a)] then skipped.moving = skipped.moving + 1 return end
             local kind = kindOf(a, myClan)
-            if kind ~= "roamer" and not (kind == "homebody" and opts and opts.gathering and goesToGatherings(a)) then return end
+            -- (a patrol takes the camp's named warriors too - opts.warriors, as a Gathering does: library exercise
+            -- 2026-11-05, in the RiverClan camp every cat gives quests, so no plain 'roamer' was about and no patrol left)
+            -- (a patrol's warriors: not the leader or the medicine cat - VM 2026-11-05, the deputy's 'you two' sent Lionstar)
+            local fits = kind == "roamer" or (kind == "homebody" and opts and opts.gathering and goesToGatherings(a))
+            if not fits and kind == "homebody" and opts and opts.warriors and goesToGatherings(a) then
+                local giver = enumName("/Script/SwtQuest.EGiverRole", a.GiverRole, giverCache) or ""
+                local role = enumName("/Script/SwtQuest.ENarrativeRole", a.narrativeRole, roleCache) or ""
+                fits = giver ~= "Leader" and giver ~= "MedicineCat" and not role:find("Leader$")
+                    and not role:find("MedicineCat$")
+            end
+            if not fits then skipped.kind = skipped.kind + 1 return end
             local q = a:K2_GetActorLocation()
-            if not mid or (q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2 <= 7000 ^ 2 then cats[#cats + 1] = a end
+            if not mid or (q.X - mid.X) ^ 2 + (q.Y - mid.Y) ^ 2 <= 7000 ^ 2 then cats[#cats + 1] = a
+            else skipped.far = skipped.far + 1 end
         end)
     end
-    if #cats == 0 then return nil end
+    if #cats == 0 then
+        log("walkers: patrol (%s) - no cat to send: %d not seen drawn, %d walking already, %d not the kind, %d over 70 m from camp",
+            why or "?", skipped.unseen, skipped.moving, skipped.kind, skipped.far)
+        return nil
+    end
     patrols.nextId = patrols.nextId + 1
     local id = patrols.nextId
     local g = { cats = {}, met = false, onBack = onBack, left = 0 }
@@ -993,7 +1013,9 @@ local function tick()
                         pcall(WaCa.Emit, "WalkerMoves", m.name, path, m.leg == #m.legs and "home" or "away")
                     end
                 end
-            elseif m.state == "walk" and m.lead and leadWaits(a, m) then
+            -- (not a patrol's leader: 'lead' there is the cat that speaks when you meet the patrol - it waited for you
+            -- as a Lead: step's cat does, and stood still the whole patrol; library exercise 2026-11-05, Blackshade)
+            elseif m.state == "walk" and m.lead and not m.patrol and leadWaits(a, m) then
                 -- (leading your cat: it waits while you're far behind)
             elseif m.state == "walk" then
                 fadeCheck(a, m)

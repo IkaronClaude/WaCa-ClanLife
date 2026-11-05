@@ -2012,6 +2012,36 @@ local function runStep(s, ctx, nextStep, stop, jump)
             log("events: Activity %s - no cat '%s'", tostring(s.value), tostring(s.who or "Nearest"))
         end
         nextStep()
+    elseif k == "Patrol" then
+        -- (Patrol: <place>[; <place> ...] @ <cats> - a patrol of the story's own: the nearest clanmates (3, or @ n) walk
+        -- out to those places one after another and home again; the scene goes on meanwhile. Library exercise
+        -- 2026-11-05: a story could only tip the chance a patrol leaves (ClanPatrol), never send one to its places)
+        local pts, missing = {}, {}
+        for raw in tostring(s.value or ""):gmatch("[^;]+") do
+            local spec = raw:match("^%s*(.-)%s*$")
+            local q = Events.Place(spec)
+            if q then pts[#pts + 1] = { X = q.X, Y = q.Y, Z = q.Z } else missing[#missing + 1] = spec end
+        end
+        local n = math.max(1, math.floor(tonumber(s.who or "") or 3))
+        local who
+        if #pts > 0 then
+            local okP, Patrols = pcall(require, "patrols")
+            if okP and Patrols.Dispatch then
+                local ok, w = pcall(Patrols.Dispatch, n, pts, "a story's patrol", function()
+                    log("events: the story's patrol is back")
+                end)
+                who = ok and w or nil
+                if not ok then log("events: Patrol - %s", tostring(w)) end
+            end
+        end
+        if who then
+            log("events: Patrol - %s set(s) off to %d place(s)%s", who, #pts,
+                #missing > 0 and (" (not found: " .. table.concat(missing, ", ") .. ")") or "")
+        else
+            log("events: Patrol %s - %s; going on", tostring(s.value), #pts == 0 and "no such place" or
+                "no clanmates near enough to send")
+        end
+        nextStep()
     elseif k == "Choice" then
         askChoice(s.value, nextStep)
     elseif k == "Freeze" then

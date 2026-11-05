@@ -11,7 +11,7 @@ local WaCa, log, Events
 local modDir
 
 -- the scene runner's step kinds (events.lua's Run)
-local KINDS = { Add = true, Bond = true, Card = true, Duty = true, Activity = true, Newcomer = true, Skip = true, Choice = true, Cutscene = true, Else = true, EndIf = true, Dialogue = true, Emit = true, Fade = true,
+local KINDS = { Add = true, Bond = true, Card = true, Duty = true, Activity = true, Patrol = true, Newcomer = true, Skip = true, Choice = true, Cutscene = true, Else = true, EndIf = true, Dialogue = true, Emit = true, Fade = true,
                 FadeIn = true, Freeze = true, Gather = true, Groups = true, Hook = true, If = true, Lead = true, Pair = true,
                 Part = true, Party = true, Pose = true, Release = true, Set = true, Wait = true, Say = true, Interact = true }
 -- (which keys of which files are scene steps / conditions)

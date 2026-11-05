@@ -49,12 +49,45 @@ function Patrols.Send(cats, points, onBack)
     leg()
     out[p.id] = p
     caseOn(true)
-    log("patrols: patrol %d - %d cats head out to %d border points", p.id, #cats, #points)
+    log("patrols: patrol %d - %d cats head out - %d stop(s) on the way", p.id, #cats, #points)
     WaCa.Emit("PatrolOut", p.id, cats)
     return p
 end
 
 function Patrols.Out() return out end
+
+-- A PATROL TO THESE POINTS, by whatever cats can go (the clan's own and a story's - Patrol: steps share it; library
+-- exercise 2026-11-05: the story step tried the camp's walking cats only and found none on the VM): the camp's roaming
+-- cats on foot (walkers.lua), else the nearest clanmates within GatherRadius (follow.lua). Returns a description of
+-- who went, or nil.
+function Patrols.Dispatch(n, points, why, onBack)
+    if #(points or {}) == 0 then return nil end
+    -- (PatrolOut / PatrolBack once, whichever way it goes: Send emits its own; the walkers' way here)
+    local id
+    local function back()
+        WaCa.Emit("PatrolBack", id)
+        if onBack then pcall(onBack) end
+    end
+    local okW, wid, names = pcall(function() return require("walkers").Patrol(n, points, why, back, { warriors = true }) end)
+    id = okW and wid or nil
+    if id then
+        WaCa.Emit("PatrolOut", id)
+        return table.concat(names or {}, ", ")
+    end
+    local camp = Duties.Camp()
+    local from = camp and camp.middle
+    if not from then pcall(function() from = FindFirstOf("PlayerController").Pawn:K2_GetActorLocation() end) end
+    if not from then return nil end
+    local cats = Follow.Nearest(n, cfg.gather, from)
+    if #cats == 0 then return nil end
+    local route = {}
+    if camp and camp.middle then route[1] = camp.middle end
+    for _, q in ipairs(points) do route[#route + 1] = q end
+    Patrols.Send(cats, route, onBack)
+    local names2 = {}
+    for _, a in ipairs(cats) do names2[#names2 + 1] = (WaCa.CatName and WaCa.CatName(a)) or "?" end
+    return table.concat(names2, ", ")
+end
 
 function Patrols.Init(c)
     WaCa, log, Duties, Follow, Lines = c.WaCa, c.log, c.Duties, c.Follow, c.Lines
@@ -91,26 +124,15 @@ function Patrols.Init(c)
         -- VM: none within 60 m of the camp. The nearest within GatherRadius meet in camp first, then head out together.)
         -- (on foot with the walkers' mover - the camp's own cats, from camp; the AI walks of the field cats below fail
         -- on this map: VM 2026-10-30. Meeting the patrol out there stops it: walkers.lua)
-        local ok, id = pcall(function()
-            local pts = Duties.BorderPoints(cfg.points, camp.middle)
-            if #pts == 0 then return nil end
-            caseOn(true)
-            return require("walkers").Patrol(cfg.size, pts, "the clan's " .. third:lower(), function()
-                caseOn(false)
-                WaCa.Emit("PatrolBack", "walkers")
-            end)
-        end)
-        if ok and id then
-            WaCa.Emit("PatrolOut", id)
-            return
-        end
-        caseOn(false)
-        local cats = Follow.Nearest(cfg.size, cfg.gather, camp.middle)
         local points = Duties.BorderPoints(cfg.points, camp.middle)
-        if #points > 0 then table.insert(points, 1, camp.middle) end
-        if #cats > 0 and #points > 0 then Patrols.Send(cats, points)
-        else log("patrols: no patrol this %s (%d clanmates within %d m, %d border points)", third:lower(), #cats,
-            cfg.gather / 100, #points) end
+        caseOn(true)
+        local ok, who = pcall(Patrols.Dispatch, cfg.size, points, "the clan's " .. third:lower(), function()
+            caseOn(false)
+        end)
+        if not (ok and who) then
+            caseOn(false)
+            log("patrols: no patrol this %s (%s%d border points)", third:lower(), ok and "" or (tostring(who) .. "; "), #points)
+        end
     end)
 end
 
