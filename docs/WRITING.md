@@ -329,6 +329,8 @@ Title = Herb round
 Points = Den:Medicine Cat's den; Pile; S:herbalist     ; a den by its name, Pile, Zone:<code>, a cat / role, X Y Z
 PointName1 = The medicine den                           ; what each point is called on the HUD
 Card1 = The den smells of marigold and old cobweb.      ; a card when it's reached
+Interact1 = Sniff                                       ; DONE there, not just reached: the Interact prompt, E, this pose
+                                                        ; (Sit Lie Sleep Eat Sniff Meow Play Groom Dig; 1 = no pose)
 Chance = Morning:1, Noon:1                              ; how likely, next to the clan's own duties
 MinRank = Apprentice                                    ; (and MaxRank)
 

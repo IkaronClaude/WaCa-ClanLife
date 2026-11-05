@@ -1248,7 +1248,17 @@ local function reached(t, what, i)
     if t.done or not today or today.task ~= t then return end
     if what == "point" and t.custom then
         local pt = t.points[i]
-        if pt.done or (i > 1 and not t.points[i - 1].done) then return end
+        if pt.done or pt.busy or (i > 1 and not t.points[i - 1].done) then return end
+        -- (an Interact point: the pose first, then done - reached again when it has played)
+        local pose = t.custom.interacts[i]
+        if pose and not pt.posed then
+            pt.busy = true
+            local steps = { { kind = "Wait", value = "0.1" } }
+            if pose ~= "1" then steps = { { kind = "Pose", value = pose, who = "Player" }, { kind = "Wait", value = "2" } } end
+            Events.Run(steps, function() pt.busy, pt.posed = false, true reached(t, "point", i) end, context())
+            return
+        end
+        if pt.spot then pt.spot:Remove() pt.spot = nil end
         pt.done = true
         removeMarker(pt)
         mapClear("duty" .. i)
@@ -1257,6 +1267,7 @@ local function reached(t, what, i)
         local nxt = t.points[i + 1]
         if nxt then
             nxt.marker = marker(nxt)
+            if t.custom.interacts[i + 1] then nxt.spot = WaCa.InteractSpot(nxt, function() reached(t, "point", i + 1) end, { reach = 300 }) end
             mapMark("duty" .. (i + 1), nxt, MARK_PATROL, t.custom.title .. ": " .. nxt.name)
         else
             taskDone(t)
@@ -1398,6 +1409,7 @@ local function setUp(kind)
             t.points[i] = q
         end
         t.points[1].marker = marker(t.points[1])
+        if c.interacts[1] then t.points[1].spot = WaCa.InteractSpot(t.points[1], function() reached(t, "point", 1) end, { reach = 300 }) end
         mapMark("duty1", t.points[1], MARK_PATROL, c.title .. ": " .. t.points[1].name)
         -- (where each point resolved to - a writer's Den:/cat point that lands somewhere odd shows here)
         local at = {}
@@ -2102,7 +2114,7 @@ local function where()
                         if m and m:IsValid() then pcall(function() m:K2_SetActorLocation(q, false, {}, true) end) end
                     end
                 end
-                if dist(pt) <= t.custom.reach then reached(t, "point", i) end
+                if not t.custom.interacts[i] and dist(pt) <= t.custom.reach then reached(t, "point", i) end
                 break
             end
         end
@@ -2331,13 +2343,16 @@ function Duties.Init(c)
         local name = type(sec) == "table" and section:match("^Duty%.([%w_]+)$")
         if name and sec.Off ~= "1" and (sec.Points or "") ~= "" then
             local c = { title = (sec.Title or "") ~= "" and sec.Title or name, goal = (sec.Goal or "") ~= "" and sec.Goal or nil,
-                        points = {}, names = {}, cards = {}, reach = tonumber(sec.Reach or "") or 400,
+                        points = {}, names = {}, cards = {}, interacts = {}, reach = tonumber(sec.Reach or "") or 400,
                         minRank = (sec.MinRank or "") ~= "" and sec.MinRank or nil,
                         maxRank = (sec.MaxRank or "") ~= "" and sec.MaxRank or nil }
             for spec in tostring(sec.Points):gmatch("[^;]+") do c.points[#c.points + 1] = spec:match("^%s*(.-)%s*$") end
             for i = 1, #c.points do
                 if (sec["PointName" .. i] or "") ~= "" then c.names[i] = sec["PointName" .. i] end
                 if (sec["Card" .. i] or "") ~= "" then c.cards[i] = sec["Card" .. i] end
+                -- (Interact<i> = <pose> | 1: that point is DONE there, not reached - show, not tell: the game's Interact
+                -- prompt, your cat plays the pose (Dig, Sniff, Eat ...), done after it; library 2026-11-05)
+                if (sec["Interact" .. i] or "") ~= "" then c.interacts[i] = sec["Interact" .. i] end
             end
             custom[name], KINDS[name], NAMES[name] = c, true, c.title:lower()
             if sec.Counted == "1" then COUNTED[name] = true end
