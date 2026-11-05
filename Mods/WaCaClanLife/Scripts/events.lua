@@ -445,6 +445,43 @@ function Events.Role(key)
     return kind or "E", name or key
 end
 
+-- THE COPY YOUR CAT IS WITH: the game keeps two actors of one cat at times (library exercise 2026-11-05: Toadfrost in
+-- camp and a second 190 m off, both shown; S:mentor was bound to the far one - a Lead fetched it from 148 m while the
+-- one in camp stood by). Of `a` and every other quest cat of its name, the nearest to your cat; cached 2 s per name.
+local copies = {}
+local function nearestCopy(a)
+    local name
+    pcall(function() name = WaCa.CatName and WaCa.CatName(a) end)
+    local pawn = pc() and pc().Pawn
+    if not (name and pawn) then return a end
+    local c = copies[name]
+    if not c or os.clock() - c.at > 2 then
+        c = { at = os.clock(), list = {} }
+        for _, q in ipairs(FindAllOf("QuestBaseActor") or {}) do
+            pcall(function()
+                if q:IsValid() and not q.bHidden and WaCa.CatName(q) == name then c.list[#c.list + 1] = q end
+            end)
+        end
+        copies[name] = c
+    end
+    if #c.list < 2 then return a end
+    local at, best, bd = pawn:K2_GetActorLocation(), a, nil
+    pcall(function()
+        local p = a:K2_GetActorLocation()
+        bd = (p.X - at.X) ^ 2 + (p.Y - at.Y) ^ 2
+    end)
+    for _, q in ipairs(c.list) do
+        pcall(function()
+            if not q:IsValid() then return end
+            local p = q:K2_GetActorLocation()
+            local d = (p.X - at.X) ^ 2 + (p.Y - at.Y) ^ 2
+            if not bd or d < bd then best, bd = q, d end
+        end)
+    end
+    return best
+end
+Events.NearestCopy = nearestCopy
+
 function Events.Who(name)
     name = (name and name ~= "") and name or "Nearest"
     local pawn = pc() and pc().Pawn
@@ -452,7 +489,7 @@ function Events.Who(name)
     local kind, role = Events.Role(name)
     if kind == "S" then
         local a = bound[name] and StaticFindObject(bound[name])
-        if a and a:IsValid() then return a end
+        if a and a:IsValid() then return nearestCopy(a) end
         -- (cast in events.ini [Cast] but not bound yet - its cat wasn't about: try now)
         if castSpecs[name] and Events.Cast(name) then
             a = StaticFindObject(bound[name])
@@ -472,9 +509,9 @@ function Events.Who(name)
                 if r == name or (mine and r:find("^" .. mine)) then found = a else fallback = fallback or a end
             end
         end)
-        if found then return found end
+        if found then return nearestCopy(found) end
     end
-    if fallback then return fallback end
+    if fallback then return nearestCopy(fallback) end
     -- (BY NAME - library exercise 2026-11-03: '@ Emberheart' found no cat; who resolved roles only. The world's cats by
     -- their name, a mod's spawned ones too - WaCa.Cats - the nearest of that name)
     if WaCa.Cats then
