@@ -300,6 +300,10 @@ function DayNight.Init(c)
         keep()
     end)
     local function worldUp()
+        -- (the save's day and hour back NOW when the slot is known - not only on the next game save: after a mod reload
+        -- the clock ran from day 1, 08:00 for minutes and the clan's day started as day 1 while the save was on 19.
+        -- Library exercise 2026-11-05; the first save after a load still does it when no slot is known yet)
+        pcall(restore)
         local s = sky()
         if not s then
             log("daynight: the world has no BP_DayNightSky - no cycle here")
