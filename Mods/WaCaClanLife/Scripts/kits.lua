@@ -372,14 +372,18 @@ function Kits.Init(c)
             if not ok then log("kits: the newcomer failed (%s)", tostring(err)) end
         end)
     end)
-    if cfg.on then
-        WaCa.On("HaveKits", function(mate, count)
-            ExecuteInGameThread(function()
-                local ok, err = pcall(Kits.Born, mate, count)
-                if not ok then log("kits: the birth failed (%s)", tostring(err)) end
-            end)
+    -- (kits off = the player wants none of their own: a story's / mod's HaveKits is declined - said so, never silently;
+    -- library exercise 2026-11-05, time skips did nothing without a word when off)
+    WaCa.On("HaveKits", function(mate, count)
+        if not cfg.on then
+            log("kits: HaveKits (%s) declined - kits are off (kits.ini On = 0)", tostring(mate))
+            return
+        end
+        ExecuteInGameThread(function()
+            local ok, err = pcall(Kits.Born, mate, count)
+            if not ok then log("kits: the birth failed (%s)", tostring(err)) end
         end)
-    end
+    end)
     WaCa.On("GameSaved", function()
         restore()
         keep()
