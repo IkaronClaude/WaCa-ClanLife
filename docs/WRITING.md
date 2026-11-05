@@ -120,7 +120,8 @@ S:envoy = Clan:ShadowClan      ; another Clan's cat (Clan:<Clan>.<Part> for its 
 
 One role means something to the clan's day itself: **`S:mentor`** - your cat's mentor. While your cat is an
 apprentice, it reports its duties to its mentor instead of the deputy (the game names a mentor only in its story's
-lines, so your pack says who it is: `S:mentor = Reedwhisker`). No mentor cast = the deputy, as for everyone else.
+lines - Clan Life reads them: the story role your clan's lines call "your mentor" most, RiverClan's The Regretful
+Warrior, plays it; your pack can name another: `S:mentor = Reedwhisker`). None found = the deputy, as for everyone else.
 
 Your scenes then say `@ S:herbalist`, and your cutscenes say `B = S:loner`. A role played by another Clan's cat
 (`Clan:ShadowClan`) is a cat made up from the save's cats the first time; it is kept with the save, so your envoy is the

@@ -2310,8 +2310,74 @@ end
 
 local function sidecar() return WaCa.SlotFile("WaCaEvents") end
 
+-- YOUR CAT'S MENTOR, FROM THE GAME'S OWN LINES (operator 2026-11-04: an apprentice reports to its mentor; the game has
+-- no mentor field - its story names one only in dialogue): every line of the game's text naming a story role as "your
+-- mentor" ("{THE REGRETFUL WARRIOR} as your mentor", "was your mentor" ...) counts for that role; the most named one
+-- whose cat is in this world (of your clan) plays S:mentor, unless a pack casts it. English lines
+-- only (the phrase is looked for): another language = no mentor found = the deputy, as before. Logged with its count.
+local function storyMentor()
+    if castSpecs["S:mentor"] then return end
+    local ok, keys = pcall(function()
+        return StaticFindObject("/Script/Engine.Default__KismetStringTableLibrary"):GetKeysFromStringTable(FName("SwtStrings"))
+    end)
+    if not (ok and keys) then return end
+    local roles = {}
+    pcall(function()
+        StaticFindObject("/Script/SwtQuest.ENarrativeRole"):ForEachName(function(n) roles[(n:ToString():gsub("^.*::", ""))] = true end)
+    end)
+    local count = {}
+    for i = 1, #keys do
+        local k = keys[i]
+        -- (each key an FString in the array's element: :get() first - VM 2026-11-04, a tostring of it read nothing)
+        local key = type(k) == "string" and k or nil
+        if not key then pcall(function() key = k:get():ToString() end) end
+        local text = key and WaCa.GetText(key) or ""
+        for ph in text:gmatch("{([%u ]+)}[^{}]-your mentor") do
+            local name = ph:lower():gsub("(%a)(%a*)", function(a, b) return a:upper() .. b end):gsub(" ", "")
+            if roles[name] then count[name] = (count[name] or 0) + 1 end
+        end
+    end
+    local list = {}
+    for name, n in pairs(count) do list[#list + 1] = { name = name, n = n } end
+    table.sort(list, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.name < b.name end)
+    -- (YOUR clan's only: the story's mentors of the other Clans' tales stand in the world too - the most named, The
+    -- Self Doubting Warrior, isn't RiverClan's)
+    local mine = clan()
+    local wanted = {}
+    pcall(function()
+        StaticFindObject("/Script/SwtQuest.ENarrativeRole"):ForEachName(function(n, x) wanted[(n:ToString():gsub("^.*::", ""))] = x end)
+    end)
+    for _, e in ipairs(list) do
+        local cat
+        for _, a in ipairs(FindAllOf("QuestBaseActor") or {}) do
+            pcall(function()
+                if not cat and a:IsValid() and a.narrativeRole == wanted[e.name] and clanName(a.ClanType) == mine
+                    and not a:GetClass():GetFName():ToString():find("Filler") then
+                    cat = a
+                end
+            end)
+        end
+        if cat and cat:IsValid() then
+            castSpecs["S:mentor"] = "E:" .. e.name
+            Events.BindRole("S:mentor", cat)
+            log("events: your cat's mentor (S:mentor) = %s - the game's lines call %s 'your mentor' %d time(s)",
+                WaCa.CatName(cat) or e.name, e.name, e.n)
+            return
+        end
+    end
+    log("events: no mentor in the game's lines with a cat in this world (%d role(s) named) - an apprentice reports to the deputy", #list)
+end
+
 function Events.Init(c)
     WaCa, log, modDir, DayNight = c.WaCa, c.log, c.modDir, c.DayNight
+    -- (the mentor once the world and the cast are up)
+    local mentorFor
+    WaCa.On("ScreenShown", function(screen)
+        if not screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then return end
+        if mentorFor == WaCa.CurrentSlot() then return end
+        mentorFor = WaCa.CurrentSlot()
+        ExecuteInGameThreadWithDelay(25000, function() local okM, err = pcall(storyMentor) if not okM then log("events: mentor - %s", tostring(err)) end end)
+    end)
     local ini = WaCa.ReadContent(modDir .. "/config/events.ini", "events") or {}
     local e = ini["Events"] or {}
     cfg.cardSeconds = tonumber(e.CardSeconds or "") or cfg.cardSeconds
