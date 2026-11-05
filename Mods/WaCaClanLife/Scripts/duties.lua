@@ -1265,15 +1265,20 @@ local function reached(t, what, i)
         return
     end
     if what == "point" and t.kind == "Water" then
+        -- (show, not tell, as the bedding: the Interact prompt at the water, your cat dips the moss - the Eat pose -
+        -- done when it has; the card that told it is gone, the day panel says where it goes now)
         local pt = t.points[1]
-        if pt.done then return end
-        pt.done = true
-        removeMarker(pt)
-        mapClear("water")
-        log("duties: moss soaked for the elders")
-        card("The moss soaks up the cool water. Carry it to the elders.")
-        taskDone(t)
-        statusSoon()
+        if pt.done or pt.busy then return end
+        pt.busy = true
+        Events.Run({ { kind = "Pose", value = "Eat", who = "Player" }, { kind = "Wait", value = "2" } }, function()
+            pt.busy, pt.done = false, true
+            if pt.spot then pt.spot:Remove() pt.spot = nil end
+            removeMarker(pt)
+            mapClear("water")
+            log("duties: moss soaked for the elders")
+            taskDone(t)
+            statusSoon()
+        end, context())
         return
     end
     if what == "point" and t.kind == "Bedding" then
@@ -1430,6 +1435,7 @@ local function setUp(kind)
         else
             t.points = { spot }
             spot.marker = marker(spot)
+            spot.spot = WaCa.InteractSpot(spot, function() reached(t, "point", 1) end, { reach = cfg.gatherReach * 2 })
             mapMark("water", spot, MARK_PATROL, "Soak moss here")
             log("duties: water for the elders - soak moss at %.0f %.0f", spot.X, spot.Y)
         end
@@ -2102,7 +2108,8 @@ local function where()
         end
     elseif t.kind == "Patrol" then
         for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.reach then reached(t, "point", i) end end
-    elseif t.kind == "Water" and t.points then
+    elseif t.kind == "Water" and t.points and not t.points[1].spot then
+        -- (only when no Interact spot could be made: arriving does it, as before)
         if not t.points[1].done and dist(t.points[1]) <= cfg.gatherReach * 2 then reached(t, "point", 1) end
     elseif t.kind == "Bedding" and t.points and not t.points[1].spot then
         -- (only when the Interact spot couldn't be made: arriving does it, as before)
