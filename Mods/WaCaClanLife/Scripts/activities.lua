@@ -322,7 +322,9 @@ end
 
 function Activities.Init(c)
     WaCa, log, modDir, DayNight = c.WaCa, c.log, c.modDir, c.DayNight
-    local ini = WaCa.ReadIni(modDir .. "/config/activities.ini") or {}
+    -- (a pack's own activities too - content/activities.ini; library exercise 2026-11-05: read alone, a pack's
+    -- [Activity.ShareTongues] wasn't there, though WRITING.md offers writers the Activity: step)
+    local ini = WaCa.ReadContent(modDir .. "/config/activities.ini", "activities") or {}
     local j = ini["Join"] or {}
     join.on = c.part("Join", j.On)
     join.key = (j.Key or "") ~= "" and j.Key or join.key
