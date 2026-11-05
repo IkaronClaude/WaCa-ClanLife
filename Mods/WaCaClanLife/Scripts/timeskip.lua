@@ -86,8 +86,11 @@ function TimeSkip.Init(c)
     cfg.title = t.Card or "{DAYS} passes. It is {SEASON}."
     cfg.fade = tonumber(t.Fade or "") or cfg.fade
     cfg.summary = (t.Summary or "1") ~= "0"
-    log("timeskip: %s (rest key %s: %d day(s))", cfg.on and "on" or "off", tostring(cfg.key), cfg.days)
-    if not cfg.on then return end
+    log("timeskip: %s (rest key %s: %d day(s))%s", cfg.on and "on" or "off", tostring(cfg.key), cfg.days,
+        cfg.on and "" or " - a story's skips still play")
+    -- (On = 0 turns off RESTING (the key) only: a story's Skip: steps / SkipDays are the story's, and played on. Library
+    -- exercise 2026-11-05: with time skips off - the default - nothing listened to SkipDays, and a pack's 'Skip:' did
+    -- nothing at all, without a word)
     -- (other mods skip time the same way - their Lua isn't this one: WaCa.Emit("SkipDays", n))
     local cs = WaCa.ReadContent(c.modDir .. "/config/timeskip.ini", "timeskip") or {}
     for section, sec in pairs(cs) do
@@ -142,7 +145,7 @@ function TimeSkip.Init(c)
             require("events").Run(steps)
         end)
     end)
-    if cfg.key then
+    if cfg.on and cfg.key then
         WaCa.On("KeyDown", function(_, name)
             -- only in the world: not in a menu, the player's cat is there
             local c = pc()
