@@ -4,7 +4,7 @@
      Suggested: upload as EXPERIMENTAL / early access - every feature is off until turned on in its ini. -->
 
 **Name:** WaCa Clan Life (experimental)
-**Version:** 0.8.0
+**Version:** 0.9.0
 **Category:** Gameplay
 **Summary (short description, max 350 characters):**
 Live in your clan: day and night, seasons and weather, the deputy's daily tasks, sharing tongues in the evening, night
@@ -58,7 +58,7 @@ The full guide is on GitHub: https://github.com/IkaronClaude/WaCa-ClanLife/blob/
 
 ## Requirements
 - **UE4SS for Warrior Cats** - https://www.nexusmods.com/warriorcatsclansoftheforest/mods/2
-- **WaCa Core** - TODO: Nexus link
+- **WaCa Core 1.1.0 or newer** - TODO: Nexus link
 - Recommended: **WaCa Hunting** (TODO: Nexus link) - the seasons, weather and your cat's tiredness then change the
   hunting odds.
 - Optional: **WaCa Cutscenes** (TODO: Nexus link) - for story packs with cutscenes (`Cutscene:` steps; without
@@ -109,5 +109,11 @@ the licence and credit, and say what you changed. Story mods built on it: list i
 - UE4SS (RE-UE4SS team), CaptainJackalope (UE4SS for Warrior Cats on Nexus).
 
 ## Changelog
+- 0.9.0 - needs WaCa Core 1.1.0. Duties are done, not just reached: bedding, water and herbs with the game's own
+  Interact prompt and your cat's poses; flavour lines as speech over the cat; an apprentice reports to its mentor
+  (found from the game's own story); a map mark for who you report to; the Clan tab in the pause menu. Patrols really
+  leave camp now (camp warriors, never rogues). For story writers: Say / Interact / Patrol steps, named places
+  everywhere, Interact points in your own duties, your own activities and time skips, a cutscene can bring your cat
+  home; a place event waits while another scene runs; the story day and clock are right after a reload.
 - 0.8.0 - first release as its own mod (from the all-in-one WaCa ModKit 0.7): the clan loop with turn-ins, clan
   events, Gatherings, patrols, dialogue by story day, content files for story mods.

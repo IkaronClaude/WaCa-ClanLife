@@ -181,7 +181,7 @@ calls your mod's code from a story file.
 
 ## Install
 Needs **UE4SS for Warrior Cats** ([Nexus](https://www.nexusmods.com/warriorcatsclansoftheforest/mods/2)) and
-**[WaCa Core](https://github.com/IkaronClaude/WaCa-Core)**. Extract the zip into the game's folder so that
+**[WaCa Core](https://github.com/IkaronClaude/WaCa-Core) 1.1.0 or newer**. Extract the zip into the game's folder so that
 `Wrc\Binaries\Win64\ue4ss\Mods\WaCaClanLife` and `Wrc\Content\Paks\~mods\WaCaClanLife_P.*` (rain and snow) exist - it
 turns itself on. Uninstall: delete those. Your saves are fine; the mod's own state (time, weather, story) is in small
 files next to them.

@@ -2,7 +2,7 @@
 -- the deputy's task, its turn-in, the clan's events - sharing tongues, meetings - and the night's sleep or watch),
 -- Gatherings, the clan's own patrols, cats saying new things by day and story, exhaustion from effort, and a scene
 -- system any mod can write story into (content/*.ini files - see the README). Needs WaCa Core.
-local VERSION = "0.8.0"
+local VERSION = "0.9.0"
 local hasCore, WaCa = pcall(require, "WaCa")    -- (no WaCa Core: its library is missing too)
 
 local modDir = debug.getinfo(1, "S").source:match("^@(.+)[/\\]Scripts[/\\]main%.lua$") or "."
@@ -12,7 +12,7 @@ if not (hasCore and WaCaNative_Command) then
     log("WaCa Core is not installed (or off) - this mod needs it: nothing applied")
     return
 end
-if not WaCa.Needs("1.0.0", "WaCaClanLife") then return end
+if not WaCa.Needs("1.1.0", "WaCaClanLife") then return end
 
 -- ONE SWITCH (config/clanlife.ini): [ClanLife] On = 1 turns on every part in its Parts list, whatever that part's own
 -- file says; parts not listed (or On = 0 here) follow their own file's On. So a player turns the clan's life on in one
