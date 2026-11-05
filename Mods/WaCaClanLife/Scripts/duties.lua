@@ -316,7 +316,7 @@ local function gatherPoints(n)
                 local q = a:K2_GetActorLocation()
                 local d = math.sqrt((q.X - at.X) ^ 2 + (q.Y - at.Y) ^ 2)
                 if d >= cfg.gatherMinDist and d <= cfg.maxDist then
-                    found[#found + 1] = { X = q.X, Y = q.Y, Z = q.Z, d = d }
+                    found[#found + 1] = { X = q.X, Y = q.Y, Z = q.Z, d = d, pickup = (a:GetFullName():gsub("^%S+ ", "")) }
                     what = what or (cls:find("Moss") and "moss" or "herbs")
                 end
             end)
@@ -1460,11 +1460,14 @@ local function setUp(kind)
         else
             for i, pt in ipairs(t.points) do
                 mapMark("gather" .. i, pt, MARK_HUNT, "Gather " .. (t.what or "herbs"))
+                -- (SHOW, NOT TELL - operator 2026-11-04: arriving at the herb isn't gathering it; the game's own pickup is.
+                -- A point with its pickup known counts once that pickup is gone / hidden - the game took it into your
+                -- cat's mouth; only a point without one counts on arrival, as before)
                 pt.area = placeArea(pt, { X = cfg.gatherReach, Y = cfg.gatherReach, Z = 1000 }, 0, function(entering)
-                    if entering then reached(t, "point", i) end
+                    if entering and not pt.pickup then reached(t, "point", i) end
                 end)
             end
-            log("duties: gather %s - %d spots marked (the game's own %s)", t.what, #t.points, t.what)
+            log("duties: gather %s - %d spots marked (the game's own %s - picked up, not just reached)", t.what, #t.points, t.what)
         end
     elseif kind == "Train" then
         local partner = trainingPartner()
@@ -2106,7 +2109,19 @@ local function where()
         if not t.points[1].done and dist(t.points[1]) <= 700 then reached(t, "point", 1)
         elseif t.points[1].done and not t.points[2].done and not t.points[2].spot and dist(t.points[2]) <= cfg.gatherReach * 2 then reached(t, "point", 2) end
     elseif t.kind == "Gather" and t.points then
-        for i, pt in ipairs(t.points) do if not pt.done and dist(pt) <= cfg.gatherReach then reached(t, "point", i) end end
+        for i, pt in ipairs(t.points) do
+            if not pt.done then
+                if pt.pickup then
+                    -- (picked: the pickup gone from the world, or hidden as the game hides a gathered one)
+                    local a = StaticFindObject(pt.pickup)
+                    local gone = not WaCa.Live(a)
+                    if not gone then pcall(function() gone = a.bHidden or not a.RootComponent:IsVisible() end) end
+                    if gone then log("duties: %s picked up at %.0f %.0f", t.what or "herbs", pt.X, pt.Y) reached(t, "point", i) end
+                elseif dist(pt) <= cfg.gatherReach then
+                    reached(t, "point", i)
+                end
+            end
+        end
     elseif t.kind == "Train" then
         local a = StaticFindObject(t.path)
         if a and a:IsValid() and dist(a:K2_GetActorLocation()) <= cfg.reach then reached(t, "teacher") end
@@ -2472,6 +2487,20 @@ function Duties.Init(c)
     -- sleeping: your cat uses a nest (the game's own sleep spot) at night - the night passes
     WaCa.Watch("OnInteracted", "/Script/SwtAdventure.SwtAdventureInteractableActor", "WaCaInteracted", "post")
     WaCa.On("WaCaInteracted", function(actor)
+        -- (a Gather point's own pickup collected - the game's OnInteracted on that very actor: the gathering is done
+        -- there, not the arriving; operator 2026-11-04 "show, not tell")
+        local t = today and today.task
+        if t and t.kind == "Gather" and t.points and actor then
+            local path
+            pcall(function() path = pathOf(actor) end)
+            for i, pt in ipairs(t.points) do
+                if not pt.done and pt.pickup and pt.pickup == path then
+                    log("duties: %s gathered - its pickup taken at %.0f %.0f", t.what or "herbs", pt.X, pt.Y)
+                    reached(t, "point", i)
+                    return
+                end
+            end
+        end
         if not isNest(actor) then return end
         local night = today and (today.stage == "sleep" or (today.task and today.task.kind == "Sleep"))
         log("duties: your cat lies down in a nest%s", night and " - the night passes" or " (not night yet: a nap)")
