@@ -57,9 +57,7 @@ end
 function Patrols.Out() return out end
 
 -- A PATROL TO THESE POINTS, by whatever cats can go (the clan's own and a story's - Patrol: steps share it; library
--- exercise 2026-11-05: the story step tried the camp's walking cats only and found none on the VM): the camp's roaming
--- cats on foot (walkers.lua), else the nearest clanmates within GatherRadius (follow.lua). Returns a description of
--- who went, or nil.
+-- exercise 2026-11-05): the camp's warriors on foot (walkers.lua). Returns who went, or nil (no camp cat free).
 function Patrols.Dispatch(n, points, why, onBack)
     if #(points or {}) == 0 then return nil end
     -- (PatrolOut / PatrolBack once, whichever way it goes: Send emits its own; the walkers' way here)
@@ -74,19 +72,11 @@ function Patrols.Dispatch(n, points, why, onBack)
         WaCa.Emit("PatrolOut", id)
         return table.concat(names or {}, ", ")
     end
-    local camp = Duties.Camp()
-    local from = camp and camp.middle
-    if not from then pcall(function() from = FindFirstOf("PlayerController").Pawn:K2_GetActorLocation() end) end
-    if not from then return nil end
-    local cats = Follow.Nearest(n, cfg.gather, from)
-    if #cats == 0 then return nil end
-    local route = {}
-    if camp and camp.middle then route[1] = camp.middle end
-    for _, q in ipairs(points) do route[#route + 1] = q end
-    Patrols.Send(cats, route, onBack)
-    local names2 = {}
-    for _, a in ipairs(cats) do names2[#names2 + 1] = (WaCa.CatName and WaCa.CatName(a)) or "?" end
-    return table.concat(names2, ", ")
+    -- (NO FIELD-CAT FALLBACK: the nearest field cats through follow.lua were sent here - their AI moves fail on this map
+    -- (VM 2026-10-30, again 2026-11-05: Briar and Blaze 'set off' and stood 14 min), so a patrol was claimed and nobody
+    -- walked. No camp cat free = no patrol, said so. tickets.md P2: field cats on the walkers' mover. Patrols.Send stays
+    -- for a mod that has cats of its own.)
+    return nil
 end
 
 function Patrols.Init(c)
