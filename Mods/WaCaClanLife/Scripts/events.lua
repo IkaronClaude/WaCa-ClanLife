@@ -1838,6 +1838,41 @@ local function leadPlace(where)
     return nil
 end
 
+-- ONE PLACE RESOLVER for every step that names a place (library exercise 2026-11-04: Reach knew places.ini and "x y z",
+-- Lead knew Den: / Zone:, Gather knew Pile - a writer couldn't tell which step took what): "x y z", Here (your cat),
+-- a place of WaCa Cutscenes' places.ini ([Place.<Name>] At = x y z, a pack's own too; "Place.<Name>" as well),
+-- Den:<den>, Zone:<code>, Pile, or a cat (a name, S:<role>, Leader, Deputy ...) - where it is now. { X, Y, Z } or nil.
+local namedPlaces
+function Events.Place(spec)
+    spec = tostring(spec or ""):match("^%s*(.-)%s*$")
+    if spec == "" then return nil end
+    local x, y, z = spec:match("^(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)$")
+    if x then return { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) } end
+    if spec == "Here" then
+        local p = pc() and pc().Pawn
+        return p and p:IsValid() and p:K2_GetActorLocation() or nil
+    end
+    if not namedPlaces then
+        namedPlaces = {}
+        pcall(function()
+            local modsDir = modDir:match("^(.+)[/\\][^/\\]+$") or modDir
+            local ini = WaCa.ReadContent(modsDir .. "/WaCaCutscenes/config/places.ini", "places") or {}
+            for section, sec in pairs(ini) do
+                local name = type(sec) == "table" and tostring(section):match("^Place%.(.+)$")
+                local px, py, pz = tostring(sec.At or ""):match("^%s*(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)")
+                if name and px then namedPlaces[name] = { X = tonumber(px), Y = tonumber(py), Z = tonumber(pz) } end
+            end
+        end)
+    end
+    local named = namedPlaces[(spec:gsub("^Place%.", ""))]
+    if named then return named end
+    local ok, place = pcall(leadPlace, spec)
+    if ok and place then return place end
+    local okW, cat = pcall(Events.Who, spec)
+    cat = okW and WaCa.Live(cat)
+    return cat and cat:K2_GetActorLocation() or nil
+end
+
 local function fade(from, to, seconds)
     pcall(function()
         pc().PlayerCameraManager:StartCameraFade(from, to, seconds, { R = 0, G = 0, B = 0, A = 1 }, true, true)
@@ -1943,6 +1978,40 @@ local function runStep(s, ctx, nextStep, stop, jump)
         nextStep()
     elseif k == "Release" then
         Events.Release(ctx, nextStep)
+    elseif k == "Say" then
+        -- SAY: <line> @ <who> - the line over that cat's head (its nameplate - WaCa Core's Say), else on the screen's
+        -- line; the scene goes on when it's been read (library exercise 2026-11-04: a scene's cats could only speak
+        -- through the big card or the game's own dialogues)
+        local cat = Events.Who(s.who or "Nearest")
+        local name = cat and cat:IsValid() and WaCa.CatName and WaCa.CatName(cat) or nil
+        local line = fill(tostring(s.value or ""), ctx)
+        if not name then
+            log("events: Say - no cat %s about; the line on the screen", tostring(s.who))
+            WaCa.Emit("ShowLine", line)
+        else
+            local over = WaCa.SayOrShow and WaCa.SayOrShow(name, line)
+            log("events: %s says%s: %s", name, over and "" or " (on the screen - no nameplate up)", line)
+        end
+        after(math.max(2, #line / 14), nextStep)
+    elseif k == "Interact" then
+        -- INTERACT: <place> [= <label>] - the game's Interact prompt at a place (Events.Place: a places.ini place,
+        -- Den:, Zone:, Pile, x y z, a cat), marked on the map with the label; the scene waits until your cat uses it
+        -- (show, not tell - operator 2026-11-04; library exercise: a pack had no way to say "do this there")
+        local where, label = tostring(s.value or ""):match("^(.-)%s*=%s*(.+)$")
+        where = where or tostring(s.value or "")
+        local place = Events.Place(where)
+        local spot = place and WaCa.InteractSpot and WaCa.InteractSpot(place, function(sp)
+            sp:Remove()
+            pcall(function() require("mapmarks").Clear("scene.interact") end)
+            log("events: Interact at %s - done", where)
+            nextStep()
+        end, { reach = 300 })
+        if not spot then
+            log("events: Interact: %s - %s; going on", where, place and "no Interact prompt could be made" or "no such place")
+            return nextStep()
+        end
+        pcall(function() require("mapmarks").Set("scene.interact", place, { R = 0.45, G = 0.9, B = 0.2, A = 1 }, label or where) end)
+        log("events: Interact at %s (%.0f %.0f) - waiting for your cat%s", where, place.X, place.Y, label and (" (" .. label .. ")") or "")
     elseif k == "Wait" then
         after(tonumber(s.value) or 1, nextStep)
     elseif k == "Fade" or k == "FadeIn" then

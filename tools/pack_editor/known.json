@@ -18,6 +18,7 @@
   "Groups",
   "Hook",
   "If",
+  "Interact",
   "Lead",
   "Newcomer",
   "Pair",
@@ -25,6 +26,7 @@
   "Party",
   "Pose",
   "Release",
+  "Say",
   "Set",
   "Skip",
   "Wait"

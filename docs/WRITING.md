@@ -83,6 +83,8 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 | `Lead: <place> @ <who>` | a cat walks your cat somewhere - it comes to you, waits if you fall behind; places: `Den:<the game's den name>` (`Den:Apprentice's den`), `Zone:<code>`, `Pile`, a cat's name |
 | `Dialogue: <id> @ <who>` | one of the game's own conversations (ids in `events-dialogues.txt`) |
 | `Duty: <name>` | gives your cat that duty now - a clan duty (`Hunt`, `Patrol` ...) or your pack's own `[Duty.<Name>]` (`Duty: HerbRound`) |
+| `Say: <line> @ <who>` | that cat says the line over its own head (its nameplate); the scene goes on when it's been read |
+| `Interact: <place> = <label>` | the game's Interact prompt at a place, marked on the map with the label; the scene waits until your cat uses it - show, not tell. Places (every step that takes one): a `places.ini` place (`ReedBank`), `Den:<den>`, `Zone:<code>`, `Pile`, `x y z`, `Here`, or a cat (a name, `S:<role>`, `Leader` ...) where it is now |
 | `Bond: <points> @ <who>` | your bond with a cat grows (or shrinks) |
 | `Party: <story cats>` | who fights beside your cat from now on (`Party: Toadfrost, E:RiverClanDeputy`; `Party: none` = the game's own) - kept with the save |
 | `Set: <var> = <value>` | sets a story variable (section 5) - `Set: X = Day + 2` works too |

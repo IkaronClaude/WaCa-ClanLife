@@ -198,7 +198,7 @@ if (typeof window !== "undefined") window.PackCore = PackCore;
 </script>
 <script>
 "use strict";
-const KNOWN = {"kinds": ["Activity", "Add", "Bond", "Card", "Choice", "Cutscene", "Dialogue", "Duty", "Else", "Emit", "EndIf", "Fade", "FadeIn", "Freeze", "Gather", "Groups", "Hook", "If", "Lead", "Newcomer", "Pair", "Part", "Party", "Pose", "Release", "Set", "Skip", "Wait"], "actions": ["Ask", "Camera", "Card", "Emit", "End", "Fade", "FadeIn", "Look", "Place", "Pose", "Say", "Set", "Sound", "Wait", "Walk", "WalkIn"], "shots": ["Behind", "Game", "High", "Orbit", "Over", "Portrait", "Two", "Wide"]} || { kinds: [], actions: [], shots: [] };
+const KNOWN = {"kinds": ["Activity", "Add", "Bond", "Card", "Choice", "Cutscene", "Dialogue", "Duty", "Else", "Emit", "EndIf", "Fade", "FadeIn", "Freeze", "Gather", "Groups", "Hook", "If", "Interact", "Lead", "Newcomer", "Pair", "Part", "Party", "Pose", "Release", "Say", "Set", "Skip", "Wait"], "actions": ["Ask", "Camera", "Card", "Emit", "End", "Fade", "FadeIn", "Look", "Place", "Pose", "Say", "Set", "Sound", "Wait", "Walk", "WalkIn"], "shots": ["Behind", "Game", "High", "Orbit", "Over", "Portrait", "Two", "Wide"]} || { kinds: [], actions: [], shots: [] };
 const C = window.PackCore;
 let dirHandle = null, contentHandle = null, files = {}, saved = {}, current = null;
 const $ = id => document.getElementById(id);

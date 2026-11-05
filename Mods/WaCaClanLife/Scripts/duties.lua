@@ -1990,28 +1990,11 @@ end
 local reachState = { inside = {}, doneDay = {}, running = false, places = nil }
 local function reachPlace(spec)
     spec = tostring(spec or ""):match("^%s*(.-)%s*$")
-    local x, y, z = spec:match("^(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)$")
-    if x then return { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) } end
+    -- (the pile: the one by the camp's middle - its own rule, a pile at the world's origin was a bug, 2026-11-03)
     if spec == "Pile" then return pilePlace() end
-    if not reachState.places then
-        reachState.places = {}
-        pcall(function()
-            local modsDir = reachState.modsDir
-            local ini = WaCa.ReadContent(modsDir .. "/WaCaCutscenes/config/places.ini", "places") or {}
-            for section, sec in pairs(ini) do
-                local name = type(sec) == "table" and tostring(section):match("^Place%.(.+)$")
-                local px, py, pz = tostring(sec.At or ""):match("^%s*(%-?[%d.]+)%s+(%-?[%d.]+)%s+(%-?[%d.]+)")
-                if name and px then reachState.places[name] = { X = tonumber(px), Y = tonumber(py), Z = tonumber(pz) } end
-            end
-        end)
-    end
-    local place = reachState.places[(spec:gsub("^Place%.", ""))]
-    if place then return place end
-    -- (or a CAT - its role or name: Reach: S:storyteller / Leader / Nightheart - "when your cat meets her"; where the cat
-    -- is now, so it follows a cat that walks)
-    local ok, cat = pcall(function() return Events.Who(spec) end)
-    cat = ok and WaCa.Live(cat)
-    return cat and cat:K2_GetActorLocation() or nil
+    -- (everything else as every step resolves a place - Events.Place: x y z, places.ini, Den:, Zone:, a cat where it is
+    -- now; library exercise 2026-11-04, the steps each knew a different set)
+    return Events.Place and Events.Place(spec) or nil
 end
 local function reachCheck(pawn)
     if reachState.running then return end
