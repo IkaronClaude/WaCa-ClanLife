@@ -350,7 +350,9 @@ Every pack adds to the same files without editing them:
 - **The same section in two packs:** numbered keys (`Step1`, `Line1` ...) are added after each other, so two packs can
   both add beats to `[Day.10]`.
 - **Replacing another pack's section:** say so with `Replaces = <Pack>/<Section>` in yours, and yours takes its place
-  whole.
+  whole. Clan Life's own config counts as a pack (`WaCaClanLife`): its Gathering evening, `[Attend]`, fades out, shows
+  a card and fades back in - your `[Attend]` steps play AFTER that; `Replaces = WaCaClanLife/Attend` makes the evening
+  yours from the first step.
 - **Turning one off:** `Off = 1` in your copy of it.
 - **Conflicts:** two packs setting the same plain key differently (say `Chance`) without `Replaces` is a conflict. It
   is reported in UE4SS.log (`CONFLICT`) and once on screen, so nobody wins silently.
