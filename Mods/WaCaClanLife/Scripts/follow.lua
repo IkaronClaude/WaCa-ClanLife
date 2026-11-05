@@ -162,7 +162,11 @@ function Follow.Nearest(n, radius, at)
     local near = {}
     for _, c in ipairs(FindAllOf("BP_Exploration_Character_Base_C") or {}) do
         pcall(function()
-            if c:IsValid() and c.CharacterType == 1 and not c.bHidden and ai(c) then
+            -- (not an ENEMY: every field cat on the RiverClan map ran AIC_Wrc_Enemy_Controller - VM 2026-11-05, 66 of 66,
+            -- rogues and other clans' encounter cats - and were taken as 'clanmates' for companions / patrols)
+            local ctl = ai(c)
+            local enemy = ctl and ctl:GetClass():GetFName():ToString():find("Enemy") ~= nil
+            if c:IsValid() and c.CharacterType == 1 and not c.bHidden and ctl and not enemy then
                 local d = dist(c, p)
                 if d < (radius or 3000) and d > 1 then table.insert(near, { c, d }) end
             end
