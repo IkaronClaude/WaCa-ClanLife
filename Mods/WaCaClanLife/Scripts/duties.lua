@@ -2482,9 +2482,10 @@ function Duties.Init(c)
     if kept and kept.key and kept.text and WaCa.GetText(kept.key) ~= kept.text then WaCa.SetText(kept.key, kept.text) end
     -- the deputy's own words (the game has only "nothing new for you" for a cat whose story has nothing to say): while
     -- a talk with the deputy is open, that line is the clan loop's - your report, or a reminder of your task
-    -- WHO YOUR CAT TALKS TO: the talk screen's NpcRef - or, a talk screen without one (the game's patch 1.1 has a new
-    -- WBP_QuestGiver_Dialogue2: the deputy said the game's "nothing new for you" and the talk handed nothing in,
-    -- operator 2026-11-04), the nearest story cat within ReportRadius of your cat. Logged which, once per talk.
+    -- WHO YOUR CAT TALKS TO: the talk screen's NpcRef (every WBP_QuestGiver_Dialogue* is a QuestGiverWidget - it has
+    -- one), else, a talk screen without it, the nearest story cat within ReportRadius. Logged with the cat's name
+    -- (operator 2026-11-04: the deputy said the game's "nothing new for you" - the log will show who was talked to; the
+    -- clan's deputy is the cat whose STORY role is <Clan>Deputy, not one whose actor class says Deputy)
     local function talkPartner(screen)
         local ok, npc = pcall(function() return screen.NpcRef end)
         if ok and npc and npc:IsValid() then return npc, "NpcRef" end
