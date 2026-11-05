@@ -418,11 +418,40 @@ function Days.Init(c)
     if not cfg.on then return end
     local okPacks, errPacks = pcall(readPacks, c.modDir)
     if not okPacks then log("days: the packs' stories couldn't be read (%s)", tostring(errPacks)) end
+    -- (the save's story days - read once per save slot: on its first GameSaved, or at once when the HUD shows and the
+    -- slot is known. Library exercise 2026-11-05: after a mod reload mid-game no save came for 6 min, and the story
+    -- ran as day 1 - its day-1 scenes due - while the save was on day 2 and the pack on its day 3)
+    local function restore()
+        local slot = WaCa.CurrentSlot()
+        if not slot or restoredFor == slot then return false end
+        restoredFor = slot
+        local saved = WaCa.ReadIni(sidecar() or "") or {}
+        local s = saved["Story"] or {}
+        for _, pk in ipairs(packs) do
+            local ps = saved["Pack." .. pk.mod] or {}
+            pk.day, pk.seen = math.max(1, math.floor(tonumber(ps.Day or "") or 1)), {}
+            for key in (ps.Seen or ""):gmatch("[^,%s]+") do pk.seen[key] = true end
+        end
+        local had = false
+        if tonumber(s.Day or "") then
+            story = math.floor(tonumber(s.Day))
+            seen = {}
+            for key in (s.Seen or ""):gmatch("[^,%s]+") do seen[key] = true end
+            setUp("as saved")
+            had = true
+        end
+        -- (the save's pack days known now: a rank reached while a pack was behind - the save's or an older
+        -- session's - crosses it; a rank-up quest already on is warned about)
+        crossGameSyncs(latestRank(), "as saved")
+        WaCa.Emit("WaCaCheckGameSync")
+        return had
+    end
     local started = false
     WaCa.On("ScreenShown", function(screen)
         if started or not screen:GetClass():GetFName():ToString():find("^WBP_GuiHudGame") then return end
         started = true
-        setUp("the session starts")
+        local ok, had = pcall(restore)
+        if not (ok and had) then setUp("the session starts") end
     end)
     WaCa.On("DutiesJudged", function(_, done, missed) lastJudged = { done = done, missed = missed } end)
     -- (the game's own story: its rank-up quest coming = the warning; the rank-up = the crossing)
@@ -486,27 +515,7 @@ function Days.Init(c)
         end
     end)
     WaCa.On("GameSaved", function()
-        local slot = WaCa.CurrentSlot()
-        if slot and restoredFor ~= slot then
-            restoredFor = slot
-            local saved = WaCa.ReadIni(sidecar() or "") or {}
-            local s = saved["Story"] or {}
-            for _, pk in ipairs(packs) do
-                local ps = saved["Pack." .. pk.mod] or {}
-                pk.day, pk.seen = math.max(1, math.floor(tonumber(ps.Day or "") or 1)), {}
-                for key in (ps.Seen or ""):gmatch("[^,%s]+") do pk.seen[key] = true end
-            end
-            if tonumber(s.Day or "") then
-                story = math.floor(tonumber(s.Day))
-                seen = {}
-                for key in (s.Seen or ""):gmatch("[^,%s]+") do seen[key] = true end
-                setUp("as saved")
-            end
-            -- (the save's pack days known now: a rank reached while a pack was behind - the save's or an older
-            -- session's - crosses it; a rank-up quest already on is warned about)
-            crossGameSyncs(latestRank(), "as saved")
-            WaCa.Emit("WaCaCheckGameSync")
-        end
+        restore()
         local path = sidecar()
         if path then
             local keys = {}
