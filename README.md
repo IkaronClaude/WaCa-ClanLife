@@ -179,7 +179,11 @@ other mod, use the events - WaCa Core carries them between mods: `DayStarted`, `
 [EVENTS.md](https://github.com/IkaronClaude/WaCa-Core/blob/main/docs/EVENTS.md)), and a scene's `Emit: <event>` step
 calls your mod's code from a story file.
 
-## Install
+## Install
+**Updating to a new version:** the zip brings its own `config` files and replaces yours. Before you
+extract it, copy `Wrc\Binaries\Win64\ue4ss\Mods\WaCaClanLife\config` somewhere safe, and afterwards copy back the lines you had
+changed. Your saves, and each save's mod data next to them, are never touched.
+
 Needs **UE4SS for Warrior Cats** ([Nexus](https://www.nexusmods.com/warriorcatsclansoftheforest/mods/2)) and
 **[WaCa Core](https://github.com/IkaronClaude/WaCa-Core) 1.1.0 or newer**. Extract the zip into the game's folder so that
 `Wrc\Binaries\Win64\ue4ss\Mods\WaCaClanLife` and `Wrc\Content\Paks\~mods\WaCaClanLife_P.*` (rain and snow) exist - it

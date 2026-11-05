@@ -65,6 +65,10 @@ The full guide is on GitHub: https://github.com/IkaronClaude/WaCa-ClanLife/blob/
   it a scene goes straight on).
 
 ## Installation
+**Updating to a new version:** the zip brings its own `config` files and replaces yours. Before you
+extract it, copy `Wrc\Binaries\Win64\ue4ss\Mods\WaCaClanLife\config` somewhere safe, and afterwards copy back the lines you had
+changed. Your saves, and each save's mod data next to them, are never touched.
+
 1. Install UE4SS for Warrior Cats and WaCa Core (see their pages).
 2. Extract this zip into the game's folder (Steam > right-click the game > Manage > Browse local files):
    `Wrc\Binaries\Win64\ue4ss\Mods\WaCaClanLife` and `Wrc\Content\Paks\~mods\WaCaClanLife_P.*` exist afterwards.
