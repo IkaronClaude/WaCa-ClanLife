@@ -2244,12 +2244,27 @@ local function runStep(s, ctx, nextStep, stop, jump)
 end
 
 -- run the steps in order, then onDone - also when a step fails: a scene never blocks the loop
+-- (scenes running now - Events.Busy(): a Reach event waits while another scene runs. Library exercise 2026-11-05: the
+-- mentor's ScentLesson led your cat to the reeds and the pack's FrostAtTheReeds (When = Reach: ReedBank) fired in the
+-- middle of it. A run older than 10 min doesn't count - a scene stuck on a step must not silence the places for good)
+local running = {}
+function Events.Busy()
+    local now, n = os.time(), 0
+    for token, since in pairs(running) do
+        if now - since < 600 then n = n + 1 else running[token] = nil end
+    end
+    return n > 0
+end
+
 function Events.Run(steps, onDone, ctx)
     local i = 0
     local finished = false
+    local token = {}
+    running[token] = os.time()
     local function stop()
         if finished then return end
         finished = true
+        running[token] = nil
         if onDone then onDone() end
     end
     local nextStep

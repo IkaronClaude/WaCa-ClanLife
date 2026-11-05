@@ -2055,6 +2055,7 @@ local function reachCheck(pawn)
                     elseif reachState.doneDay[e.name] == day then why = "done today"
                     elseif not Events.Check(e.require) then why = "its Require doesn't hold"
                     elseif WaCa.InMenu() then why = "a menu is open"
+                    elseif Events.Busy and Events.Busy() then why = "another scene runs"
                     else
                         local c = WaCa.Latest and WaCa.Latest("cutscene")
                         if type(c) == "table" and c.playing then why = "a cutscene plays" end
