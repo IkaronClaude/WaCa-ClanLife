@@ -1608,7 +1608,7 @@ taskDone = function(t)
     -- a role (Deputy, Leader, MedicineCat ...) = report to that cat, None = done is the end
     local turnIn = (t.lead and "Camp") or cfg.turnIn[t.kind] or "None"
     -- (an APPRENTICE reports to its mentor, not the deputy - operator 2026-11-04. The game names the mentor only in
-    -- its story's lines, so the mentor is a story role: S:mentor in a pack's [Cast]; none cast = the deputy)
+    -- its story's lines: events.lua binds S:mentor from them (a pack's [Cast] may set it too); none = the deputy.
     if turnIn == "Deputy" then
         local ok, r, rank = pcall(ranks)
         if ok and rank and r and r.Apprentice and rank <= r.Apprentice then
