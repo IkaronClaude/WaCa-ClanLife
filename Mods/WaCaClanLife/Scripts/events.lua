@@ -436,6 +436,9 @@ end
 
 -- who plays each of the mods' own roles, as written ([Cast] S:<role> = ...) - the story check reads it
 function Events.CastSpecs() return castSpecs end
+-- (roles Clan Life casts ITSELF, in play - a pack may use them without a [Cast] line; the checkers count them as cast.
+-- Library exercise 2026-11-05: ScentLesson's S:mentor gave four false 'has no cat' problems)
+Events.BUILTIN_ROLES = { ["S:mentor"] = "your mentor (from the game's own text)" }
 
 function Events.Role(key)
     local kind, name = tostring(key):match("^([ES]):(.+)$")
@@ -2099,7 +2102,9 @@ local function runStep(s, ctx, nextStep, stop, jump)
         -- "walk quests". Lead: Den:Apprentice's den @ S:mentor)
         local okW, Walkers = pcall(require, "walkers")
         local cat = Events.Who(s.who or "Nearest")
-        local spot = leadPlace(s.value)
+        -- (the one place resolver - library exercise 2026-11-05: ScentLesson's 'Lead: ReedBank' said "no such place"
+        -- while the very next 'Interact: ReedBank' found it; Lead still called the older den / zone / pile / cat one)
+        local spot = Events.Place(s.value)
         if not (okW and Walkers.Lead and cat and cat:IsValid() and spot) then
             log("events: Lead: %s - %s; going on", tostring(s.value),
                 not spot and "no such place" or "no cat to lead (" .. tostring(s.who or "Nearest") .. ")")
@@ -2128,6 +2133,24 @@ local function runStep(s, ctx, nextStep, stop, jump)
         -- (your cat far off when it begins: the cat comes to you first - without waiting - then leads; VM 2026-11-01: it
         -- started by waiting where it stood)
         local function lead() Walkers.Lead(cat, spot, function() arrive() end, "Lead: " .. tostring(s.value)) end
+        -- (a cat too far to walk in, and out of sight - not drawn, or past LeadFar and behind your camera: set down
+        -- LeadNear behind your cat first, its own spot kept as home. Library exercise 2026-11-05: ScentLesson's mentor
+        -- started 139 m off, undrawn - your cat waited ~2 min of play for it to walk over)
+        pcall(function()
+            if not (Walkers.BringNear and WaCa.OnGround) then return end
+            local p, q = pc().Pawn:K2_GetActorLocation(), cat:K2_GetActorLocation()
+            local d = math.sqrt((p.X - q.X) ^ 2 + (p.Y - q.Y) ^ 2)
+            if d <= (cfg.leadFar or 4000) then return end
+            local drawn = true
+            pcall(function() drawn = cat.SkeletalMeshComponent:IsVisible() end)
+            local yaw = math.rad(pc().PlayerCameraManager:GetCameraRotation().Yaw)
+            local fx, fy = math.cos(yaw), math.sin(yaw)
+            local inFront = (q.X - p.X) * fx + (q.Y - p.Y) * fy > 0
+            if drawn and inFront then return end
+            local back = cfg.leadNear or 1200
+            local at = WaCa.OnGround({ X = p.X - fx * back, Y = p.Y - fy * back, Z = p.Z + 100 })
+            Walkers.BringNear(cat, at)
+        end)
         local near = true
         local meet
         pcall(function()

@@ -80,7 +80,7 @@ A scene is `Step1`, `Step2` ... in order, as many as you need. Each is `Kind: wh
 |---|---|
 | `Card: <text>` | a line of text in the middle of the screen (`{DAY}` = the day) |
 | `Cutscene: <Name>` | plays a cutscene (section 6); the scene waits for it |
-| `Lead: <place> @ <who>` | a cat walks your cat somewhere - it comes to you, waits if you fall behind; places: `Den:<the game's den name>` (`Den:Apprentice's den`), `Zone:<code>`, `Pile`, a cat's name |
+| `Lead: <place> @ <who>` | a cat walks your cat somewhere - it comes to you, waits if you fall behind; places: any place a step takes - a pack's `places.ini` name (`ReedBank`), `x y z`, `Den:<the game's den name>` (`Den:Apprentice's den`), `Zone:<code>`, `Pile`, a cat's name or role |
 | `Dialogue: <id> @ <who>` | one of the game's own conversations (ids in `events-dialogues.txt`) |
 | `Duty: <name>` | gives your cat that duty now - a clan duty (`Hunt`, `Patrol` ...) or your pack's own `[Duty.<Name>]` (`Duty: HerbRound`) |
 | `Say: <line> @ <who>` | that cat says the line over its own head (its nameplate); the scene goes on when it's been read |

@@ -63,8 +63,9 @@ def main():
     def problem(f, sec, k, n, text): problems.append(f"{f}:{n} [{sec}] {k}: {text}")
     def warning(f, sec, k, n, text): warnings.append(f"{f}:{n} [{sec}] {k}: {text}")
 
-    # the roles cast: this pack, every other pack beside it, Clan Life's own config
-    cast = {}
+    # the roles cast: this pack, every other pack beside it, Clan Life's own config - and the roles Clan Life casts
+    # itself in play (events.lua Events.BUILTIN_ROLES)
+    cast = {"S:mentor": "your mentor (from the game's own text)"}
     sources = [os.path.join(content, "events.ini"), os.path.join(mods, "WaCaClanLife", "config", "events.ini")]
     if os.path.isdir(mods):
         for d in os.listdir(mods):

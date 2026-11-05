@@ -126,7 +126,8 @@ const rolesIn = text => (String(text || "").match(/S:[A-Za-z0-9_]+/g) || []);
 function check(files, known, others) {
     const problems = [], warnings = [];
     const kv = model => model ? model.sections.flatMap(s => s.lines.filter(l => l.kind === "kv").map(l => ({ sec: s.name, ...l }))) : [];
-    const cast = {};
+    // (the roles Clan Life casts itself in play - events.lua Events.BUILTIN_ROLES)
+    const cast = { "S:mentor": "your mentor (from the game's own text)" };
     for (const m of [files["events.ini"], ...(others || [])]) {
         const s = m && section(m, "Cast");
         if (s) for (const l of s.lines) if (l.kind === "kv") cast[l.key] = l.value;

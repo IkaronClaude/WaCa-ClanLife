@@ -850,6 +850,24 @@ function Walkers.Lead(a, spot, onArrive, why, noWait)
     return true
 end
 
+-- A CAT TOO FAR TO WALK IN, BROUGHT NEAR OUT OF SIGHT (library exercise 2026-11-05: ScentLesson's mentor started 139 m
+-- off and undrawn - your cat stood waiting ~2 min of play while it walked over): set down `at` (behind your camera) -
+-- its own spot kept as home, so after the scene it walks back there as before. Only a cat you can't see: the caller
+-- decides that.
+function Walkers.BringNear(a, at)
+    local path = pathOf(a)
+    local q, r = a:K2_GetActorLocation(), a:K2_GetActorRotation()
+    local m = movers[path]
+    if not m then
+        movers[path] = { home = { X = q.X, Y = q.Y, Z = q.Z }, homeRot = { pitch = r.pitch, Yaw = r.Yaw, Roll = r.Roll },
+                         state = "hold", name = nameOf(a) or "?", legs = {}, leg = 1 }
+    end
+    a:K2_SetActorLocation(at, false, {}, true)
+    log("walkers: %s brought near, out of sight (%.0f m from its spot)", nameOf(a) or "?",
+        math.sqrt((at.X - q.X) ^ 2 + (at.Y - q.Y) ^ 2) / 100)
+    return true
+end
+
 local function tick()
     if not inWorld or not next(movers) then lastTick = nil return end
     local now = gameNow()

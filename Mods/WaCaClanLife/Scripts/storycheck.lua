@@ -80,7 +80,9 @@ function StoryCheck.Run()
     local cutscenes = WaCa.Latest and WaCa.Latest("cutscenes.names")
     local known = {}
     for _, n in ipairs(type(cutscenes) == "table" and cutscenes or {}) do known[n] = true end
-    local cast = Events.CastSpecs and Events.CastSpecs() or {}
+    local cast = {}
+    for k, v in pairs(Events.CastSpecs and Events.CastSpecs() or {}) do cast[k] = v end
+    for k, v in pairs(Events.BUILTIN_ROLES or {}) do if cast[k] == nil then cast[k] = v end end
     local set, tested = luaSetVars(), {}
     local files = { "clanevents", "days", "gatherings", "duties", "events", "lines", "start" }
     local loaded = {}
