@@ -1855,6 +1855,18 @@ function Events.Place(spec)
         local p = pc() and pc().Pawn
         return p and p:IsValid() and p:K2_GetActorLocation() or nil
     end
+    local named = Events.NamedPlace(spec)
+    if named then return named end
+    local ok, place = pcall(leadPlace, spec)
+    if ok and place then return place end
+    local okW, cat = pcall(Events.Who, spec)
+    cat = okW and WaCa.Live(cat)
+    return cat and cat:K2_GetActorLocation() or nil
+end
+-- a place of places.ini by its name ("ReedBank" or "Place.ReedBank"), { X, Y, Z } or nil - never a cat (a duty point
+-- uses it to tell a place from a cat to follow; library exercise 2026-11-05)
+function Events.NamedPlace(spec)
+    spec = tostring(spec or ""):match("^%s*(.-)%s*$")
     if not namedPlaces then
         namedPlaces = {}
         pcall(function()
@@ -1867,13 +1879,7 @@ function Events.Place(spec)
             end
         end)
     end
-    local named = namedPlaces[(spec:gsub("^Place%.", ""))]
-    if named then return named end
-    local ok, place = pcall(leadPlace, spec)
-    if ok and place then return place end
-    local okW, cat = pcall(Events.Who, spec)
-    cat = okW and WaCa.Live(cat)
-    return cat and cat:K2_GetActorLocation() or nil
+    return namedPlaces[(spec:gsub("^Place%.", ""))]
 end
 
 local function fade(from, to, seconds)

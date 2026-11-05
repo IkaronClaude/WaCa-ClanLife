@@ -326,7 +326,7 @@ screen and on the map, then turned in:
 ```ini
 [Duty.HerbRound]
 Title = Herb round
-Points = Den:Medicine Cat's den; Pile; S:herbalist     ; a den by its name, Pile, Zone:<code>, a cat / role, X Y Z
+Points = Den:Medicine Cat's den; Pile; S:herbalist     ; a den by its name, Pile, Zone:<code>, a places.ini name, a cat / role, X Y Z
 PointName1 = The medicine den                           ; what each point is called on the HUD
 Card1 = The den smells of marigold and old cobweb.      ; a card when it's reached
 Interact1 = Sniff                                       ; DONE there, not just reached: the Interact prompt, E, this pose

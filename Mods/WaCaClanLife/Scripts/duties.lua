@@ -1371,6 +1371,10 @@ local function dutyPoint(spec)
     if zone then return Duties.ZonePlace(zone) end
     local x, y, z = spec:match("^([%-%d%.]+)[%s,]+([%-%d%.]+)[%s,]+([%-%d%.]+)$")
     if x then return { X = tonumber(x), Y = tonumber(y), Z = tonumber(z) } end
+    -- (a pack's named place - places.ini, as every step takes it; library exercise 2026-11-05: 'Points = ReedBank' said
+    -- "isn't in this world". A copy: the duty writes its name and marker onto the point)
+    local named = Events.NamedPlace and Events.NamedPlace(spec)
+    if named then return { X = named.X, Y = named.Y, Z = named.Z } end
     local a = Events.Who(spec)
     local q = a and a:IsValid() and a:K2_GetActorLocation()
     return q and { X = q.X, Y = q.Y, Z = q.Z } or nil
@@ -1393,7 +1397,8 @@ local function setUp(kind)
             -- and a point with no PointName showed its key 'S:herbalist' on screen: a cat point is the cat's name,
             -- a PointName / Card may say {S:herbalist})
             q.name = c.names[i] and Events.Fill(c.names[i]) or nil
-            if not spec:match("^Den:") and not spec:match("^Zone:") and spec ~= "Pile" and not spec:match("^%-?%d") then
+            if not spec:match("^Den:") and not spec:match("^Zone:") and spec ~= "Pile" and not spec:match("^%-?%d")
+                    and not (Events.NamedPlace and Events.NamedPlace(spec)) then
                 -- (a CAT point follows its cat - where() re-reads it; full sweep 2026-11-04: the herbalist's point was
                 -- fixed where she stood when the duty was given - once at the world's origin, the game parking her)
                 q.cat = spec
@@ -1664,7 +1669,11 @@ reportTarget = function(how, anywhere)
             elseif tostring(how):match("^S:") then
                 -- (a pack's own role - TurnIn = S:herbalist: the cat [Cast] gives it, library exercise 2026-11-02)
                 local cat = Events.Who(how)
-                fits = cat and cat:IsValid() and pathOf(a) == pathOf(cat)
+                -- (or a cat of the SAME NAME: the game keeps two actors of one cat - library exercise 2026-11-05, Toadfrost
+                -- in camp and a second 190 m off, S:mentor bound to the far one; F beside the one in camp found "no
+                -- S:mentor". The player can't tell them apart)
+                fits = cat and cat:IsValid() and (pathOf(a) == pathOf(cat)
+                    or (WaCa.CatName and WaCa.CatName(a) ~= nil and WaCa.CatName(a) == WaCa.CatName(cat)))
             else
                 fits = a.narrativeRole and a.narrativeRole > 0 and roleName(a.narrativeRole):find(how .. "$") ~= nil
             end
@@ -1717,7 +1726,14 @@ local function reportKey()
     local cat, dist = reportTarget(how)
     if not cat then
         log("duties: the report key - no %s within %d to report to", how == "Partner" and "partner" or how, cfg.reportRadius)
-        feedback(string.format("No %s close enough to report to.", how == "Partner" and (today.task and today.task.who or "partner") or how:lower()))
+        -- (the cat by its name, a role in words - library exercise 2026-11-05: it said "No s:mentor close enough to
+        -- report to." - the role's key on screen; MedicineCat came out "medicinecat")
+        local who
+        if how == "Partner" then who = today.task and today.task.who
+        elseif how:match("^S:") then
+            pcall(function() local c = Events.Who(how) who = c and WaCa.CatName(c) end)
+        else who = "The " .. how:gsub("(%l)(%u)", "%1 %2"):lower() end
+        feedback(string.format("%s isn't close enough to hear you.", who or "The cat you report to"))
         return
     end
     -- (the cat's own name - the actor's class says little: the elder Sharpfoot is a BP_Quest_Giver_Deputy, VM 2026-11-01)
@@ -2575,6 +2591,14 @@ function Duties.Init(c)
         local t = today.task
         if how == "Partner" then
             if t and t.path and pathOf(npc) == t.path then turnedIn("Partner") end
+        elseif tostring(how):match("^S:") then
+            -- (a pack's role - S:mentor, S:herbalist: the role's cat, or one of the same name. Library exercise
+            -- 2026-11-05: matched as a game role name, it never was - talking to your mentor didn't report)
+            local okW, cat = pcall(Events.Who, how)
+            if okW and cat and cat:IsValid() and (pathOf(npc) == pathOf(cat)
+                    or (WaCa.CatName and WaCa.CatName(npc) ~= nil and WaCa.CatName(npc) == WaCa.CatName(cat))) then
+                turnedIn(how)
+            end
         else
             local role = npc.narrativeRole and roleName(npc.narrativeRole) or ""
             if role:find(how .. "$") then turnedIn(how) end
